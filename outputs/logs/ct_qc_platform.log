@@ -1,0 +1,129 @@
+2026-04-29 00:11:27,559 [INFO] ct_qc_platform — ======================================================================
+2026-04-29 00:11:27,560 [INFO] ct_qc_platform — CT-QC Platform v0.1.0
+2026-04-29 00:11:27,560 [INFO] ct_qc_platform — Timestamp: 2026-04-28T23:11:27.560184+00:00
+2026-04-29 00:11:27,560 [INFO] ct_qc_platform — Mode: qc
+2026-04-29 00:11:27,560 [INFO] ct_qc_platform — DICOM directory: data
+2026-04-29 00:11:27,560 [INFO] ct_qc_platform — Output directory: C:\Users\admin\Desktop\Nouveau dossier (3)\ct_qc_platform\outputs
+2026-04-29 00:11:27,560 [INFO] ct_qc_platform — Project root: C:\Users\admin\Desktop\Nouveau dossier (3)\ct_qc_platform
+2026-04-29 00:11:27,560 [INFO] ct_qc_platform — Log level: INFO
+2026-04-29 00:11:27,560 [INFO] ct_qc_platform — ======================================================================
+2026-04-29 00:11:27,561 [INFO] ct_qc_platform — Starting Image QC analysis on: C:\Users\admin\Desktop\Nouveau dossier (3)\ct_qc_platform\data
+2026-04-29 00:11:28,156 [INFO] ct_qc_platform — Image QC modules loaded successfully. Full pipeline available in Phase 2.
+2026-04-29 00:11:28,156 [INFO] ct_qc_platform — CT-QC Platform run complete.
+2026-05-01 11:54:54,517 [INFO] ct_qc_platform — 
+═══════════════════════════════════════════════════
+ CT QC Platform v0.1.0
+ Mode        : qc
+ DICOM Dir   : data
+ Scanner ID  : SCANNER_001
+ Slice Range : 1 → 10
+ Output Dir  : C:\Users\admin\Desktop\Nouveau dossier (3)\ct_qc_platform\outputs
+ Timestamp   : 2026-05-01T10:54:54.517438+00:00
+═══════════════════════════════════════════════════
+2026-05-01 11:54:54,545 [INFO] ct_qc_platform — QC mode selected — analysis would run here
+2026-05-01 11:54:54,546 [INFO] ct_qc_platform — Dry run — no outputs written
+2026-05-01 11:54:57,137 [INFO] ct_qc_platform — 
+═══════════════════════════════════════════════════
+ CT QC Platform v0.1.0
+ Mode        : predictive
+ DICOM Dir   : N/A
+ Scanner ID  : TEST
+ Slice Range : 1 → 999
+ Output Dir  : C:\Users\admin\Desktop\Nouveau dossier (3)\ct_qc_platform\outputs
+ Timestamp   : 2026-05-01T10:54:57.137608+00:00
+═══════════════════════════════════════════════════
+2026-05-01 11:54:57,139 [INFO] ct_qc_platform — Predictive mode selected — analysis would run here
+2026-05-01 11:54:57,139 [INFO] ct_qc_platform — Dry run — no outputs written
+2026-05-01 11:58:59,757 [INFO] ct_qc_platform — 
+===================================================
+ CT QC Platform v0.1.0
+ Mode        : qc
+ DICOM Dir   : data
+ Scanner ID  : SCANNER_001
+ Slice Range : 1 -> 10
+ Output Dir  : C:\Users\admin\Desktop\Nouveau dossier (3)\ct_qc_platform\outputs
+ Timestamp   : 2026-05-01T10:58:59.757513+00:00
+===================================================
+2026-05-01 11:58:59,758 [INFO] ct_qc_platform — QC mode selected — analysis would run here
+2026-05-01 11:58:59,758 [INFO] ct_qc_platform — Dry run — no outputs written
+2026-05-01 22:06:58,987 [INFO] __main__ — ═══════════════════════════════════════════════════
+2026-05-01 22:06:59,021 [INFO] __main__ —  CT QC Platform v0.1.0
+2026-05-01 22:06:59,021 [INFO] __main__ —  Mode        : predictive
+2026-05-01 22:06:59,021 [INFO] __main__ —  DICOM Dir   : None
+2026-05-01 22:06:59,021 [INFO] __main__ —  Scanner ID  : TEST
+2026-05-01 22:06:59,021 [INFO] __main__ —  Slice Range : 1 → 999
+2026-05-01 22:06:59,022 [INFO] __main__ —  Output Dir  : C:\Users\admin\Desktop\Nouveau dossier (3)\ct_qc_platform\outputs
+2026-05-01 22:06:59,023 [INFO] __main__ —  Dry Run     : True
+2026-05-01 22:06:59,023 [INFO] __main__ —  Timestamp   : 2026-05-01T21:06:59.023276+00:00
+2026-05-01 22:06:59,023 [INFO] __main__ — ═══════════════════════════════════════════════════
+2026-05-01 22:06:59,026 [INFO] modules.predictive.metrics_archive — Initialized empty archive at: C:\Users\admin\Desktop\Nouveau dossier (3)\ct_qc_platform\outputs\reports\qc_archive.json
+2026-05-01 22:06:59,026 [WARNING] modules.predictive.trend_model — Metric 'center_water_std_hu': fewer than 2 data points (0) — skipping trend fit
+2026-05-01 22:06:59,028 [WARNING] modules.predictive.trend_model — Metric 'nps_peak_frequency_lpmm': fewer than 2 data points (0) — skipping trend fit
+2026-05-01 22:06:59,028 [WARNING] modules.predictive.trend_model — Metric 'mtf_50_lpmm': fewer than 2 data points (0) — skipping trend fit
+2026-05-01 22:06:59,029 [WARNING] modules.predictive.trend_model — Metric 'hu_linearity_max_deviation_hu': fewer than 2 data points (0) — skipping trend fit
+2026-05-01 22:06:59,029 [WARNING] modules.predictive.trend_model — Metric 'ed_soft_tissue_slope': fewer than 2 data points (0) — skipping trend fit
+2026-05-01 22:06:59,029 [WARNING] modules.predictive.trend_model — Metric 'ed_bone_slope': fewer than 2 data points (0) — skipping trend fit
+2026-05-01 22:06:59,029 [INFO] modules.predictive.trend_model — Fitted trends for 0 / 6 metrics
+2026-05-01 22:06:59,030 [INFO] core.pipeline_orchestrator — Insufficient historical data for predictive analysis — need >= 2 sessions
+2026-05-01 22:06:59,030 [INFO] __main__ — ── Predictive Maintenance Summary ──
+2026-05-01 22:06:59,031 [INFO] __main__ —   Overall urgency: stable
+2026-05-01 22:06:59,031 [INFO] __main__ —   Recommended action: Collect more QC sessions before predictive analysis.
+2026-05-01 22:06:59,031 [INFO] __main__ — ═══ Run complete in 0.0 seconds ═══
+2026-05-01 22:08:06,359 [INFO] __main__ — ===================================================
+2026-05-01 22:08:06,359 [INFO] __main__ —  CT QC Platform v0.1.0
+2026-05-01 22:08:06,360 [INFO] __main__ —  Mode        : predictive
+2026-05-01 22:08:06,360 [INFO] __main__ —  DICOM Dir   : None
+2026-05-01 22:08:06,360 [INFO] __main__ —  Scanner ID  : TEST
+2026-05-01 22:08:06,360 [INFO] __main__ —  Slice Range : 1 -> 999
+2026-05-01 22:08:06,360 [INFO] __main__ —  Output Dir  : C:\Users\admin\Desktop\Nouveau dossier (3)\ct_qc_platform\outputs
+2026-05-01 22:08:06,360 [INFO] __main__ —  Dry Run     : True
+2026-05-01 22:08:06,360 [INFO] __main__ —  Timestamp   : 2026-05-01T21:08:06.360829+00:00
+2026-05-01 22:08:06,360 [INFO] __main__ — ===================================================
+2026-05-01 22:08:06,361 [WARNING] modules.predictive.trend_model — Metric 'center_water_std_hu': fewer than 2 data points (0) — skipping trend fit
+2026-05-01 22:08:06,361 [WARNING] modules.predictive.trend_model — Metric 'nps_peak_frequency_lpmm': fewer than 2 data points (0) — skipping trend fit
+2026-05-01 22:08:06,362 [WARNING] modules.predictive.trend_model — Metric 'mtf_50_lpmm': fewer than 2 data points (0) — skipping trend fit
+2026-05-01 22:08:06,362 [WARNING] modules.predictive.trend_model — Metric 'hu_linearity_max_deviation_hu': fewer than 2 data points (0) — skipping trend fit
+2026-05-01 22:08:06,362 [WARNING] modules.predictive.trend_model — Metric 'ed_soft_tissue_slope': fewer than 2 data points (0) — skipping trend fit
+2026-05-01 22:08:06,362 [WARNING] modules.predictive.trend_model — Metric 'ed_bone_slope': fewer than 2 data points (0) — skipping trend fit
+2026-05-01 22:08:06,362 [INFO] modules.predictive.trend_model — Fitted trends for 0 / 6 metrics
+2026-05-01 22:08:06,362 [INFO] core.pipeline_orchestrator — Insufficient historical data for predictive analysis — need >= 2 sessions
+2026-05-01 22:08:06,363 [INFO] __main__ — -- Predictive Maintenance Summary --
+2026-05-01 22:08:06,363 [INFO] __main__ —   Overall urgency: stable
+2026-05-01 22:08:06,363 [INFO] __main__ —   Recommended action: Collect more QC sessions before predictive analysis.
+2026-05-01 22:08:06,363 [INFO] __main__ — === Run complete in 0.0 seconds ===
+2026-05-01 22:08:21,862 [INFO] __main__ — ===================================================
+2026-05-01 22:08:21,862 [INFO] __main__ —  CT QC Platform v0.1.0
+2026-05-01 22:08:21,862 [INFO] __main__ —  Mode        : all
+2026-05-01 22:08:21,862 [INFO] __main__ —  DICOM Dir   : data
+2026-05-01 22:08:21,863 [INFO] __main__ —  Scanner ID  : TEST
+2026-05-01 22:08:21,863 [INFO] __main__ —  Slice Range : 1 -> 999
+2026-05-01 22:08:21,863 [INFO] __main__ —  Output Dir  : C:\Users\admin\Desktop\Nouveau dossier (3)\ct_qc_platform\outputs
+2026-05-01 22:08:21,863 [INFO] __main__ —  Dry Run     : True
+2026-05-01 22:08:21,863 [INFO] __main__ —  Timestamp   : 2026-05-01T21:08:21.863429+00:00
+2026-05-01 22:08:21,863 [INFO] __main__ — ===================================================
+2026-05-01 22:08:21,864 [INFO] core.dicom_loader — Found 0 files matching '*.dcm' in C:\Users\admin\Desktop\Nouveau dossier (3)\ct_qc_platform\data
+2026-05-01 22:08:21,864 [INFO] core.dicom_loader — DICOM load summary — accepted: 0 CT, skipped: 0 non-CT, errors: 0, total: 0
+2026-05-01 22:08:21,864 [ERROR] core.pipeline_orchestrator — Image QC volumetric analysis failed: end_slice 999 exceeds total slice count 0
+2026-05-01 22:08:21,864 [INFO] core.pipeline_orchestrator — Image QC complete: volumetric=False, nps=False, mtf=False, hu_lin=False, ed=False, passed=False
+2026-05-01 22:08:21,865 [WARNING] modules.predictive.trend_model — Metric 'center_water_std_hu': fewer than 2 data points (0) — skipping trend fit
+2026-05-01 22:08:21,865 [WARNING] modules.predictive.trend_model — Metric 'nps_peak_frequency_lpmm': fewer than 2 data points (0) — skipping trend fit
+2026-05-01 22:08:21,865 [WARNING] modules.predictive.trend_model — Metric 'mtf_50_lpmm': fewer than 2 data points (0) — skipping trend fit
+2026-05-01 22:08:21,866 [WARNING] modules.predictive.trend_model — Metric 'hu_linearity_max_deviation_hu': fewer than 2 data points (0) — skipping trend fit
+2026-05-01 22:08:21,866 [WARNING] modules.predictive.trend_model — Metric 'ed_soft_tissue_slope': fewer than 2 data points (0) — skipping trend fit
+2026-05-01 22:08:21,867 [WARNING] modules.predictive.trend_model — Metric 'ed_bone_slope': fewer than 2 data points (0) — skipping trend fit
+2026-05-01 22:08:21,867 [INFO] modules.predictive.trend_model — Fitted trends for 0 / 6 metrics
+2026-05-01 22:08:21,867 [INFO] core.pipeline_orchestrator — Insufficient historical data for predictive analysis — need >= 2 sessions
+2026-05-01 22:08:21,867 [INFO] core.pipeline_orchestrator — Pipeline complete: 0.0 seconds, 1 errors
+2026-05-01 22:08:21,867 [INFO] __main__ — ===================================================
+2026-05-01 22:08:21,867 [INFO] __main__ —  FULL PIPELINE SUMMARY
+2026-05-01 22:08:21,867 [INFO] __main__ — ===================================================
+2026-05-01 22:08:21,867 [INFO] __main__ — -- Image QC Summary --
+2026-05-01 22:08:21,867 [INFO] __main__ —   All passed: False
+2026-05-01 22:08:21,867 [INFO] __main__ — -- Predictive Maintenance Summary --
+2026-05-01 22:08:21,867 [INFO] __main__ —   Overall urgency: stable
+2026-05-01 22:08:21,867 [INFO] __main__ —   Recommended action: Collect more QC sessions before predictive analysis.
+2026-05-01 22:08:21,867 [WARNING] __main__ —   Errors: 1
+2026-05-01 22:08:21,868 [WARNING] __main__ —     - volumetric: end_slice 999 exceeds total slice count 0
+2026-05-01 22:08:21,868 [INFO] __main__ —   Duration: 0.0 seconds
+2026-05-01 22:08:21,868 [INFO] __main__ — ===================================================
+2026-05-01 22:08:21,868 [INFO] __main__ — === Run complete in 0.0 seconds ===
