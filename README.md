@@ -1,0 +1,54 @@
+# CT QC Platform
+
+**CT Simulator Quality Control & Dosimetry Platform for Radiotherapy**
+
+A modular, standards-compliant Python platform for automated CT scanner quality
+control, patient dosimetry (SSDE per AAPM TG-220), and predictive maintenance.
+
+## Standards Compliance
+
+- **AAPM TG-66** — Quality Assurance for CT Simulators
+- **AAPM TG-233** — NPS/MTF Measurement Protocol
+- **AAPM Report 204** — Size-Specific Dose Estimates (SSDE)
+- **AAPM TG-220** — Water Equivalent Diameter
+- **IAEA TRS-430** — Electron Density Calibration
+- **Schneider et al. 1996** — HU-to-RED Conversion
+
+## Installation
+
+```bash
+pip install -e ".[dev]"
+```
+
+## Usage
+
+```bash
+# Image QC analysis
+python main.py --dicom-dir ./data --mode qc
+
+# Full pipeline with slice selection
+python main.py --dicom-dir ./data --mode all --start-slice 1 --end-slice 10
+
+# Predictive maintenance
+python main.py --mode predictive --scanner-id SCANNER_001
+
+# Dry run (validate inputs only)
+python main.py --dicom-dir ./data --mode qc --dry-run
+```
+
+## Testing
+
+```bash
+pytest
+```
+
+## Architecture
+
+- **Phase 1**: DICOM loading, ROI statistics, volumetric multi-slice engine
+- **Phase 2**: NPS, MTF, HU linearity, HU→ED calibration
+- **Phase 3**: Patient dosimetry — SSDE per AAPM TG-220
+- **Phase 4**: Predictive maintenance with hardware failure mapping
+
+## License
+
+MIT

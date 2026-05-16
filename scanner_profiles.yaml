@@ -1,0 +1,66 @@
+# CT Scanner Hardware Profiles
+# Each profile defines DICOM parsing behaviour for one scanner family.
+# The ScannerProfileRegistry reads this file at startup.
+# Add new scanner profiles here without touching any Python code.
+
+schema_version: "1.0"
+
+profiles:
+
+  siemens_somatom_gosim:
+    display_name: "Siemens SOMATOM go.Sim"
+    manufacturer_match:
+      - "SIEMENS"
+    model_match:
+      - "SOMATOM go.Sim"
+      - "SOMATOM go.Sim RT"
+    rescale_method: "standard"                  # standard DICOM (0028,1053)/(0028,1052)
+    ctdivol_tags:
+      primary:   [0x0018, 0x9345]               # CTDIvol standard tag
+      secondary: null                            # no GE-style fallback needed
+    dlp_source: "rdsr"                          # Siemens writes DLP to RDSR object
+    localizer_detection: "sop_uid"              # standard SOP Class UID detection
+    sort_preferred_tag: "SliceLocation"         # Siemens SliceLocation is reliable
+    private_tags_enabled: false
+    instance_number_bug: false
+    default_phantom: "siemens_water_phantom"
+    effective_energy_kev: 70.0                  # for μ_water in Beer-Lambert
+    notes: "Siemens SOMATOM go.Sim RT — primary radiotherapy CT simulator"
+
+  ge_discovery_rt:
+    display_name: "GE Discovery RT"
+    manufacturer_match:
+      - "GE MEDICAL SYSTEMS"
+      - "GE Healthcare"
+    model_match:
+      - "Discovery RT"
+      - "DISCOVERY RT"
+    rescale_method: "ge_private_chain"          # see _resolve_ge_rescale in dicom_loader
+    ctdivol_tags:
+      primary:   [0x0018, 0x9345]
+      secondary: [0x0018, 0x9328]               # ExposureDoseSequence fallback
+    dlp_source: "calculated"                    # GE does not always write DLP
+    localizer_detection: "image_type_string"    # detect "LOCALIZER" in ImageType
+    sort_preferred_tag: "ImagePositionPatient"  # more reliable than SliceLocation on GE
+    private_tags_enabled: true
+    instance_number_bug: true                   # known firmware bug: all InstanceNumber=0
+    default_phantom: "ge_helios_qa"
+    effective_energy_kev: 70.0
+    notes: "GE Discovery RT Gen 3 — GE private tag handling required"
+
+  generic:
+    display_name: "Generic DICOM-Compliant CT"
+    manufacturer_match: []                      # matches anything not above
+    model_match: []
+    rescale_method: "standard"
+    ctdivol_tags:
+      primary:   [0x0018, 0x9345]
+      secondary: null
+    dlp_source: "header"
+    localizer_detection: "sop_uid"
+    sort_preferred_tag: "SliceLocation"
+    private_tags_enabled: false
+    instance_number_bug: false
+    default_phantom: "generic"
+    effective_energy_kev: 70.0
+    notes: "Fallback profile for any unrecognized scanner"

@@ -1,0 +1,42 @@
+{
+  "schema_version": "1.0",
+  "active_phantom": "ge_helios",
+  "active_scanner": "ge_discovery_rt",
+  "geometry_detection": "auto",
+  "phantoms": {
+    "ge_helios": {
+      "description": "GE Helios QA Phantom, P/N 2165993-100",
+      "geometry": "auto_detect",
+      "reference_config": "helios_phantom",
+      "outer_diameter_mm": 200.0,
+      "insert_count": 7,
+      "materials": ["water", "air", "acrylic", "ldpe", "polystyrene", "delrin", "teflon"]
+    },
+    "catphan_504": {
+      "description": "The Phantom Laboratory CatPhan 504",
+      "geometry": "manual",
+      "reference_config": "image_qc",
+      "outer_diameter_mm": 200.0,
+      "insert_count": 8,
+      "materials": ["water", "air", "acrylic", "ldpe", "polystyrene", "delrin", "bone", "pmp"]
+    }
+  },
+  "scanners": {
+    "ge_discovery_rt": {
+      "description": "GE Discovery RT CT Simulator",
+      "manufacturer": "GE Healthcare",
+      "ge_private_tags": true,
+      "rescale_fallback": "ge_private_chain",
+      "localizer_detection": "image_type_and_sop_uid",
+      "instance_number_fallback": "slice_location"
+    },
+    "generic": {
+      "description": "Generic DICOM-compliant CT scanner",
+      "manufacturer": "any",
+      "ge_private_tags": false,
+      "rescale_fallback": "standard_only",
+      "localizer_detection": "sop_uid_only",
+      "instance_number_fallback": "none"
+    }
+  }
+}
