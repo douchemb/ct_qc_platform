@@ -5,3 +5,4 @@ pydicom
 plotly
 matplotlib
 scikit-learn
+PyYAML
