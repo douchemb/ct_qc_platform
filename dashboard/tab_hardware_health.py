@@ -99,30 +99,39 @@ def _collect_health_metrics() -> dict:
     metrics = {}  # metric_label -> score (0-100)
 
     # ── mA-aware noise correction ──────────────────────────────────
-    # Physics: noise ∝ 1/sqrt(mA). At low mA, expected noise is higher.
-    # We scale the safe/critical limits so the scoring is protocol-aware.
+    # Physics: noise ∝ 1/sqrt(mA). At low mA, expected noise is inherently higher.
+    # We scale the critical threshold so the scoring is protocol-aware.
+    #
+    # ⚠️ BUG FIX: previously noise_safe was also scaled by correction_factor,
+    # which caused noise_safe = 5.0 × 3.16 = 15.8 HU at 20 mA.
+    # A noise of 10.08 HU (> TG-66 tolerance of 5.0 HU) then scored 100% → WRONG.
+    #
+    # Fix: noise_safe is now CAPPED at TG_66_NOISE_TOLERANCE (5.0 HU).
+    # The mA correction ONLY widens the critical threshold, not the safe threshold.
+    # This ensures any value above 5.0 HU always triggers a health penalty.
+    TG_66_NOISE_TOLERANCE = 5.0  # Physical TG-66 tolerance — absolute ceiling for safe zone
+
     REFERENCE_MA = 200.0
     current_ma = acq_params.get("mas", REFERENCE_MA)
     if not current_ma or current_ma <= 0:
         current_ma = REFERENCE_MA
     correction_factor = (REFERENCE_MA / current_ma) ** 0.5
 
-    noise_safe = 5.0 * correction_factor
-    noise_critical = 7.0 * correction_factor
+    # noise_safe: fixed at TG-66 tolerance — no mA scaling (prevents masking real failures)
+    noise_safe = TG_66_NOISE_TOLERANCE                          # always 5.0 HU
+
+    # noise_critical: mA-aware but capped at 3× TG-66 tolerance
+    noise_critical = min(TG_66_NOISE_TOLERANCE * correction_factor * 1.4,
+                         TG_66_NOISE_TOLERANCE * 3.0)           # max 15.0 HU
 
     # ── Extract raw values ────────────────────────────────────────
     if manufacturer in ("SIEMENS", "CANON") and kpi:
-        # Noise (SD): use thickness-aware limit from KPI pipeline
+        # Noise (SD): use TG-66 safe limit, mA-aware critical limit
         noise_sd = kpi.get("noise_sd")
-        kpi_noise_limit = kpi.get("noise_limit", noise_safe)
         if noise_sd is not None:
-            # Scale safe/critical to match thickness-adjusted limit
-            thickness_ratio = kpi_noise_limit / 5.0 if kpi_noise_limit > 0 else 1.0
             metrics["noise"] = _health_score_plateau(
-                noise_sd,
-                noise_safe * thickness_ratio,
-                noise_critical * thickness_ratio,
-            )
+                noise_sd, noise_safe, noise_critical)
+
 
         # Uniformity (NUI): healthy < 3.0, critical > 5.5
         nui = kpi.get("uniformity_nui")
