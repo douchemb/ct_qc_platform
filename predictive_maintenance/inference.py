@@ -3,7 +3,7 @@ predictive_maintenance/inference.py
 ====================================
 Multi-Vendor ML Inference Engine — 4-Component RUL Prediction
 
-Loads all 8 trained RandomForest models (4 Siemens + 4 GE) and provides
+Loads all trained RandomForest models and provides
 a unified API for the Streamlit dashboard.
 
 Models loaded via @st.cache_resource (singleton, loaded once per session).
@@ -16,6 +16,7 @@ Models loaded via @st.cache_resource (singleton, loaded once per session).
 
 Siemens features (6): [Noise_HU, Uniformity_HU, Scaling_V_mm, HU_Precision, kVp, mAs]
 GE features      (4): [MTF_50_lp_cm, Uniformity_HU, Slice_Thickness_mm, HU_Precision]
+Canon features   (4): [Noise_HU, Uniformity_HU, Scaling_V_mm, HU_Precision]
 """
 from __future__ import annotations
 
@@ -31,7 +32,7 @@ logger = logging.getLogger(__name__)
 MODEL_DIR = Path(__file__).resolve().parent
 
 # ── Cache version — bump this after every retrain to bust stale cache ──
-_MODEL_VERSION = "v6_context_aware_20260515"
+_MODEL_VERSION = "v8_canon_digital_twin_20260516"
 
 # ── Model registry ────────────────────────────────────────────────
 SIEMENS_MODELS = {
@@ -56,17 +57,25 @@ GE_MODELS = {
 }
 GE_FEATURES = ["MTF_50_lp_cm", "Uniformity_HU", "Slice_Thickness_mm", "HU_Precision"]
 
+CANON_MODELS = {
+    "tube":      "rf_canon_tube.pkl",
+    "gantry":    "rf_canon_gantry.pkl",
+    "table":     "rf_canon_table.pkl",
+    "generator": "rf_canon_generator.pkl",
+}
+CANON_FEATURES = ["Noise_HU", "Uniformity_HU", "Scaling_V_mm", "HU_Precision"]
+
 
 @st.cache_resource
 def _load_all_models(_version: str = _MODEL_VERSION) -> dict:
-    """Load all 8 models (4 Siemens + 4 GE), cached as singleton.
+    """Load all models (4 Siemens + 4 GE + 4 Canon), cached as singleton.
 
     The _version parameter is a cache-busting key. When models are
     retrained and _MODEL_VERSION is bumped, the cache is invalidated
     automatically — no manual restart required.
     """
     import joblib
-    models = {"siemens": {}, "ge": {}}
+    models = {"siemens": {}, "ge": {}, "canon": {}}
 
     for key, filename in SIEMENS_MODELS.items():
         path = MODEL_DIR / filename
@@ -88,7 +97,60 @@ def _load_all_models(_version: str = _MODEL_VERSION) -> dict:
         else:
             models["ge"][key] = None
 
+    for key, filename in CANON_MODELS.items():
+        path = MODEL_DIR / filename
+        if path.exists():
+            model = joblib.load(path)
+            n_feat = model.n_features_in_
+            logger.info("Loaded %s: %d features", filename, n_feat)
+            models["canon"][key] = model
+        else:
+            models["canon"][key] = None
+
     return models
+
+
+def _canon_mock_rul(metrics: dict[str, float]) -> dict[str, Optional[int]]:
+    """Physics-based mock RUL predictions for Canon (no trained models yet).
+
+    Uses empirical degradation heuristics derived from Canon Aquilion LB
+    service literature to produce realistic RUL estimates from the
+    4 image-quality metrics.
+
+    This function is a TEMPORARY fallback until real Canon .pkl models
+    are trained and deployed.
+    """
+    noise = float(metrics.get("Noise_HU", 3.0))
+    unif = float(metrics.get("Uniformity_HU", 1.0))
+    scaling_v = float(metrics.get("Scaling_V_mm", 330.0))
+    hu_prec = float(metrics.get("HU_Precision", 1.0))
+
+    # Canon nominal phantom = 330 mm
+    scaling_err = abs(scaling_v - 330.0)
+
+    # Tube: noise is primary indicator
+    # Healthy noise ~ 2-4 HU → RUL ~ 150 days
+    # Degraded noise ~ 6+ HU → RUL drops
+    rul_tube = max(0, int(round(150 - (noise - 2.5) * 20)))
+
+    # Gantry: uniformity drift indicates brushblock / bearing wear
+    # Healthy NUI ~ 0-2 HU → RUL ~ 140 days
+    rul_gantry = max(0, int(round(140 - unif * 15)))
+
+    # Table: scaling error indicates mechanical drift
+    # Healthy error ~ 0-1 mm → RUL ~ 160 days
+    rul_table = max(0, int(round(160 - scaling_err * 25)))
+
+    # Generator: HU precision drift indicates kVp calibration
+    # Healthy delta ~ 0-2 HU → RUL ~ 145 days
+    rul_generator = max(0, int(round(145 - hu_prec * 18)))
+
+    return {
+        "tube": rul_tube,
+        "gantry": rul_gantry,
+        "table": rul_table,
+        "generator": rul_generator,
+    }
 
 
 def predict_rul(
@@ -100,12 +162,13 @@ def predict_rul(
     Strict routing:
       - SIEMENS: 6-feature vector [Noise, Uni, Scaling, HU, kVp, mAs]
       - GE:      4-feature vector [MTF, Uni, SliceThk, HU]
+      - CANON:   4-feature vector [Noise, Uni, Scaling_V, HU]
 
     kVp and mAs use safe defaults (120 kV / 200 mAs) if not provided,
     so inference never crashes even if acquisition params are missing.
 
     Args:
-        manufacturer: "GE" or "SIEMENS"
+        manufacturer: "GE", "SIEMENS", or "CANON"
         metrics: dict with the appropriate feature keys and float values.
 
     Returns:
@@ -113,10 +176,10 @@ def predict_rul(
         mapped to integer RUL in days, or None if model missing.
     """
     all_models = _load_all_models(_MODEL_VERSION)
-    is_ge = manufacturer.upper() == "GE"
+    mfr = manufacturer.upper()
 
     # ── Build feature vector with strict manufacturer routing ─────
-    if is_ge:
+    if mfr == "GE":
         model_set = all_models["ge"]
         feature_cols = GE_FEATURES
         # GE: 4 features, no context columns
@@ -127,7 +190,33 @@ def predict_rul(
                 f"Missing GE feature for inference: {exc}. "
                 f"Expected keys: {feature_cols}"
             ) from exc
+
+    elif mfr == "CANON":
+        model_set = all_models["canon"]
+        feature_cols = CANON_FEATURES
+
+        # Check if any Canon models are actually available
+        has_trained_models = any(m is not None for m in model_set.values())
+
+        if not has_trained_models:
+            # No trained Canon models → use physics-based mock fallback
+            logger.info(
+                "No trained Canon models found — using physics-based "
+                "mock RUL predictions."
+            )
+            return _canon_mock_rul(metrics)
+
+        # Canon: 4 features, no kVp/mAs
+        try:
+            X = np.array([[float(metrics[f]) for f in feature_cols]])
+        except KeyError as exc:
+            raise ValueError(
+                f"Missing Canon feature for inference: {exc}. "
+                f"Expected keys: {feature_cols}"
+            ) from exc
+
     else:
+        # Siemens (default)
         model_set = all_models["siemens"]
         feature_cols = SIEMENS_FEATURES
         # Siemens: 6 features — use .get() with safe defaults for kVp/mAs
