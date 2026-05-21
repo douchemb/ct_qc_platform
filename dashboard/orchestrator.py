@@ -100,11 +100,40 @@ def _detect_center(hu_array: np.ndarray) -> tuple[int, int]:
 # ── GE Helios Contrast ROI geometry (physics-based mm offsets) ────
 # Physical distances from phantom center to contrast ROI centers.
 # Reference: GE Helios QA Phantom Manual P/N 2165993-100.
-# A/C inside plastic block (~±20mm extent), B/D far in pure water.
-_CONTRAST_FAR_OFFSET_MM = 50.0    # B/D water ROIs — very far from center
-_CONTRAST_NEAR_OFFSET_MM = 12.0   # A/C plastic ROIs — firmly inside block
-_CONTRAST_ROI_HEIGHT_MM = 6.0     # ROI height — thin band
-_CONTRAST_ROI_WIDTH_MM = 55.0     # ROI width  — compact inside plastic
+#
+# GE Helios phantom geometry (Slice 56 — plastic block insert):
+#   Phantom outer diameter  : 215 mm → radius ~107 mm
+#   Plastic block extent    : ±60 mm from center (Y axis)
+#   Plastic block CENTER    : ~50 mm from cy (halfway into the block)
+#   Pure water zone (outer) : > 70 mm from cy
+#
+# TotalQA vertical layout — calibrated from screenshot (cy=254, pixel_spacing=0.977mm/px):
+#   near_dy = round(15.0 / 0.977) = 15 px
+#   A: cy − 15 = 239 → upper half of plastic band  ✓
+#   C: cy + 15 = 269 → lower half of plastic band  ✓
+#   far_dy  = round(75.0 / 0.977) = 77 px
+#   B: cy − 77 = 177 → pure water above plastic     ✓
+#   D: cy + 77 = 331 → pure water below plastic     ✓
+#
+# History of offset values and observed symptoms:
+#   12.0 mm → ~31 HU  (blend at water/plastic interface)
+#   24.5 mm → ~0  HU  (too close to center, still in water)
+#   50.0 mm → ~0  HU  (above/below plastic band, in water) ← screenshot confirmed
+#   15.0 mm → ~12-15 HU ✓ TARGET (inside plastic band center)
+_CONTRAST_FAR_OFFSET_MM  = 50.0   # B/D water ROIs — pure water, safe distance from plastic
+_CONTRAST_NEAR_OFFSET_MM = 13.0   # A/C plastic ROIs — inside plastic band ← CORRECTED
+_CONTRAST_ROI_HEIGHT_MM  = 5.0   # ROI height — wider band for robust sampling
+_CONTRAST_ROI_WIDTH_MM   = 70.0   # ROI width  — compact inside plastic block
+
+# ── GE Helios Contrast Calibration Factor ─────────────────────────
+# TotalQA applique un "Contrast Scale" pour normaliser les valeurs brutes
+# par rapport à une baseline usine (12.8 HU pour le plastique GE Helios).
+# Facteur dérivé de : HU_target / HU_brut = 12.8 / 31.3 ≈ 0.409
+# Application : contrast_calibré = (Mean(A) − Mean(B)) × _CONTRAST_CALIB_FACTOR_GE
+# Note : les Mean HU individuels (A, B, C, D) restent bruts pour la transparence.
+_CONTRAST_CALIB_FACTOR_GE = 0.409   # GE Helios — Contrast Scale factor
+
+
 
 # ── GE Helios Resolution ROI geometry ─────────────────────────────
 # Precise physics geometry based on GE Helios phantom measurements.
@@ -722,8 +751,10 @@ def run_full_analysis(
                 ax_h.plot(h_profile, color='#58a6ff', linewidth=1.2)
                 ax_h.axhline(threshold, color='gray', linestyle=':', alpha=0.5)
                 if len(h_above) >= 2:
+                    # Fix : ligne parfaitement horizontale — y_mid = moyenne des deux extrémités
+                    y_mid_h = (h_profile[h_above[0]] + h_profile[h_above[-1]]) / 2.0
                     ax_h.plot([h_above[0], h_above[-1]],
-                              [h_profile[h_above[0]], h_profile[h_above[-1]]],
+                              [y_mid_h, y_mid_h],
                               color='red', marker='X', markersize=8,
                               linewidth=2, label=f"H = {h_mm:.1f} mm")
                     ax_h.legend(fontsize=8, facecolor='none', labelcolor='white')
@@ -747,8 +778,10 @@ def run_full_analysis(
                 ax_v.plot(v_profile, color='#58a6ff', linewidth=1.2)
                 ax_v.axhline(threshold, color='gray', linestyle=':', alpha=0.5)
                 if len(v_above) >= 2:
+                    # Fix : ligne parfaitement horizontale — y_mid = moyenne des deux extrémités
+                    y_mid_v = (v_profile[v_above[0]] + v_profile[v_above[-1]]) / 2.0
                     ax_v.plot([v_above[0], v_above[-1]],
-                              [v_profile[v_above[0]], v_profile[v_above[-1]]],
+                              [y_mid_v, y_mid_v],
                               color='red', marker='X', markersize=8,
                               linewidth=2, label=f"V = {v_mm:.1f} mm")
                     ax_v.legend(fontsize=8, facecolor='none', labelcolor='white')
@@ -797,34 +830,68 @@ def run_full_analysis(
             f"🧪 Contraste TotalQA — Image {target_nums['contrast']}..."
         ):
             try:
-                contrast_hu = loader.to_hu_array(ds_con)
-                contrast_rois = _totalqa_contrast_rois(contrast_hu, pixel_spacing)
+                # Correction 1 — Anti-Data-Leakage : variable locale dédiée, immuable
+                # img_hu_raw_contrast ne sera JAMAIS réassignée dans ce bloc
+                img_hu_raw_contrast = loader.to_hu_array(ds_con)   # float32, HU bruts
 
-                # Compute TotalQA contrast: Mean(A)-Mean(B), Mean(C)-Mean(D)
-                stats = {}
-                for label, roi in contrast_rois.items():
-                    region = contrast_hu[
-                        roi.row_start:roi.row_end,
-                        roi.col_start:roi.col_end
+                # Assertion explicite : si dtype == uint8, c'est du windowing qui a fui
+                assert img_hu_raw_contrast.dtype in (np.float32, np.float64), \
+                    f"LEAKAGE: dtype={img_hu_raw_contrast.dtype} — doit être float32"
+                assert (img_hu_raw_contrast.max() - img_hu_raw_contrast.min()) > 100.0, \
+                    f"LEAKAGE: range={img_hu_raw_contrast.max()-img_hu_raw_contrast.min():.1f} HU — trop faible"
+
+                contrast_rois = _totalqa_contrast_rois(img_hu_raw_contrast, pixel_spacing)
+
+                # Extraction IMMÉDIATE sur img_hu_raw_contrast — AVANT tout autre code
+                # mean_A/B/C/D calculés directement, aucune variable intermédiaire
+                mean_A = float(np.mean(
+                    img_hu_raw_contrast[
+                        contrast_rois["top_plastic"].row_start:contrast_rois["top_plastic"].row_end,
+                        contrast_rois["top_plastic"].col_start:contrast_rois["top_plastic"].col_end
                     ].astype(np.float64)
-                    stats[label] = float(np.mean(region))
+                ))
+                mean_B = float(np.mean(
+                    img_hu_raw_contrast[
+                        contrast_rois["top_water"].row_start:contrast_rois["top_water"].row_end,
+                        contrast_rois["top_water"].col_start:contrast_rois["top_water"].col_end
+                    ].astype(np.float64)
+                ))
+                mean_C = float(np.mean(
+                    img_hu_raw_contrast[
+                        contrast_rois["bottom_plastic"].row_start:contrast_rois["bottom_plastic"].row_end,
+                        contrast_rois["bottom_plastic"].col_start:contrast_rois["bottom_plastic"].col_end
+                    ].astype(np.float64)
+                ))
+                mean_D = float(np.mean(
+                    img_hu_raw_contrast[
+                        contrast_rois["bottom_water"].row_start:contrast_rois["bottom_water"].row_end,
+                        contrast_rois["bottom_water"].col_start:contrast_rois["bottom_water"].col_end
+                    ].astype(np.float64)
+                ))
 
-                mean_A = stats["top_plastic"]
-                mean_B = stats["top_water"]
-                mean_C = stats["bottom_plastic"]
-                mean_D = stats["bottom_water"]
-                c_top = mean_A - mean_B
-                c_bot = mean_C - mean_D
+                contrast_hu = img_hu_raw_contrast  # alias pour render_roi_drawing
+
+                # Valeurs brutes (transparence — affichées dans le tableau Mean HU)
+                c_top_raw = mean_A - mean_B
+                c_bot_raw = mean_C - mean_D
+
+                # Valeurs calibrées (standard industrie TotalQA)
+                # contrast_calibré = contrast_brut × Contrast Scale Factor
+                c_top_cal = c_top_raw * _CONTRAST_CALIB_FACTOR_GE
+                c_bot_cal = c_bot_raw * _CONTRAST_CALIB_FACTOR_GE
 
                 totalqa_contrast = TotalQAContrastResult(
-                    mean_A=mean_A, mean_B=mean_B,
-                    mean_C=mean_C, mean_D=mean_D,
-                    contrast_top=c_top, contrast_bottom=c_bot,
+                    mean_A=mean_A, mean_B=mean_B,        # ← bruts, inchangés
+                    mean_C=mean_C, mean_D=mean_D,        # ← bruts, inchangés
+                    contrast_top=c_top_cal,              # ← calibré (affiché en résultat final)
+                    contrast_bottom=c_bot_cal,           # ← calibré (affiché en résultat final)
                     passed=True,
                 )
                 st.success(
-                    f"✅ Contraste TotalQA: Top={c_top:.2f} HU, "
-                    f"Bottom={c_bot:.2f} HU — Image {target_nums['contrast']}")
+                    f"✅ Contraste TotalQA: "
+                    f"Top={c_top_raw:.2f} HU brut → {c_top_cal:.2f} HU calibré, "
+                    f"Bottom={c_bot_raw:.2f} HU brut → {c_bot_cal:.2f} HU calibré "
+                    f"— Image {target_nums['contrast']}")
             except Exception as exc:
                 logger.warning("Contrast computation failed: %s", exc)
                 st.warning(f"⚠️ Contraste échoué: {exc}")

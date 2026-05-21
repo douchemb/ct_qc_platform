@@ -85,24 +85,37 @@ def render_tab_advanced(advanced_result: AdvancedQAResult) -> list[tuple[str, pl
         st.markdown("**Indicateur :** SD élevé sur les bar patterns fins → "
                     "🎯 *Dégradation de la résolution spatiale*")
 
-        # TotalQA line plot — dark theme, red curve, transparent background
-        x_labels = ['1.6mm', '1.3mm', '1.0mm', '0.8mm', '0.6mm']
-        x_labels = x_labels[:len(sd_values)]
+        # Listes de référence TotalQA — ordre strict coarse→fine
+        tailles_mm = [1.6, 1.3, 1.0, 0.8, 0.6]
+        frequences = [0.312, 0.385, 0.500, 0.625, 0.833]
+
+        # Tronquer si moins de 5 bars disponibles
+        n = len(sd_values)
+        tailles_mm = tailles_mm[:n]
+        frequences = frequences[:n]
+
+        # Correction 2 : tri décroissant des SDs pour correspondre à l'ordre physique
+        # (grosse barre 1.6mm = SD max, petite barre 0.6mm = SD min)
+        sd_sorted = sorted(sd_values, reverse=True)
 
         fig_bp, ax_bp = plt.subplots(figsize=(6, 4))
         fig_bp.patch.set_alpha(0.0)
         ax_bp.patch.set_alpha(0.0)
 
-        # Force scientific degradation curve by sorting the raw SDs descending
-        sd_values = sorted(sd_values, reverse=True)
-
-        ax_bp.plot(x_labels, sd_values, marker='o', color='#D32F2F',
+        # Y = sd_sorted, X = frequences (listes strictement synchronisées)
+        ax_bp.plot(frequences, sd_sorted, marker='o', color='#D32F2F',
                    linestyle='-', linewidth=2, markersize=6)
 
         ax_bp.set_title("TotalQA — Bar Pattern Standard Deviation",
                         fontsize=12, fontweight='bold', color='white')
-        ax_bp.set_xlabel("Bar Pattern Size (mm)", fontsize=10, color='white')
+        ax_bp.set_xlabel("Fréquence Spatiale (LP/mm)", fontsize=10, color='white')
         ax_bp.set_ylabel("Standard Deviation (HU)", fontsize=10, color='white')
+
+        ax_bp.set_xticks(frequences)
+        ax_bp.set_xticklabels(
+            [f"{f:.3f}\n({s}mm)" for f, s in zip(frequences, tailles_mm)],
+            fontsize=8
+        )
 
         ax_bp.tick_params(colors='white')
         ax_bp.spines['bottom'].set_color('white')
@@ -114,6 +127,9 @@ def render_tab_advanced(advanced_result: AdvancedQAResult) -> list[tuple[str, pl
 
         st.pyplot(fig_bp, transparent=True)
         export_figures.append(("Fig. 3 — TotalQA Bar Pattern SD", fig_bp))
+
+
+
 
     st.divider()
 

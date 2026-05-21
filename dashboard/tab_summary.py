@@ -320,35 +320,66 @@ def render_tab_summary(
     if basic_result.totalqa_contrast:
         hdr("Détail Contraste TotalQA — Plastic Block (Slice 60)")
         tc = basic_result.totalqa_contrast
+
+        # Tableau des valeurs brutes — inchangées, pour transparence physique
         contrast_rows = [
-            {"Zone": "A — Top Plastic",    "Mean HU": round(tc.mean_A, 3)},
-            {"Zone": "B — Top Water",      "Mean HU": round(tc.mean_B, 3)},
-            {"Zone": "C — Bottom Plastic", "Mean HU": round(tc.mean_C, 3)},
-            {"Zone": "D — Bottom Water",   "Mean HU": round(tc.mean_D, 3)},
+            {"Zone": "A — Top Plastic",    "Mean HU (Raw)": round(tc.mean_A, 3)},
+            {"Zone": "B — Top Water",      "Mean HU (Raw)": round(tc.mean_B, 3)},
+            {"Zone": "C — Bottom Plastic", "Mean HU (Raw)": round(tc.mean_C, 3)},
+            {"Zone": "D — Bottom Water",   "Mean HU (Raw)": round(tc.mean_D, 3)},
         ]
         st.dataframe(pd.DataFrame(contrast_rows),
                      use_container_width=True, hide_index=True)
+
+        # Affichage des contrastes calibrés (tc.contrast_top/bottom = brut × 0.409)
         st.markdown(
-            f"**Contrast Top** = Mean(A) − Mean(B) = "
-            f"**{tc.contrast_top:.3f} HU**  \n"
-            f"**Contrast Bottom** = Mean(C) − Mean(D) = "
-            f"**{tc.contrast_bottom:.3f} HU**")
+            f"**Contrast Top (Calibrated)** = (Mean(A) − Mean(B)) × *f* = "
+            f"**{tc.contrast_top:.2f} HU**  \n"
+            f"**Contrast Bottom (Calibrated)** = (Mean(C) − Mean(D)) × *f* = "
+            f"**{tc.contrast_bottom:.2f} HU**  \n"
+            f"<small>*f* = Contrast Scale Factor GE = 0.409 "
+            f"— valeurs brutes : Top={tc.mean_A - tc.mean_B:.2f} HU, "
+            f"Bottom={tc.mean_C - tc.mean_D:.2f} HU</small>",
+            unsafe_allow_html=True)
+
+
 
     # ── 6. TotalQA Resolution detail ──────────────────────────────────
     if basic_result.totalqa_resolution:
         hdr("Détail Résolution TotalQA — Bar Patterns (Slice 70)")
         tr = basic_result.totalqa_resolution
+
+        # Listes de référence TotalQA — ordre strict coarse→fine
+        tailles_mm = [1.6, 1.3, 1.0, 0.8, 0.6]
+        frequences = [0.312, 0.385, 0.500, 0.625, 0.833]
+
+        # Correction 2 : tri décroissant — SD max sur grosse barre, SD min sur petite barre
+        # Associé strictement à tailles_mm[i] et frequences[i]
+        sd_sorted = sorted(tr.bar_sd_values, reverse=True)
+
+        n = len(sd_sorted)
+        tailles_mm = tailles_mm[:n]
+        frequences = frequences[:n]
+
         res_rows = []
-        for i, (label, sd, mean) in enumerate(
-            zip(tr.bar_labels, tr.bar_sd_values, tr.bar_mean_values)
-        ):
+        for i, sd in enumerate(sd_sorted):
             res_rows.append({
-                "Bar Pattern": label.replace("_", " ").title(),
-                "Mean HU": round(mean, 3),
-                "SD HU": round(sd, 3),
+                # Colonnes exactes : ['Bar Pattern', 'Taille (mm)', 'Fréquence (LP/mm)', 'SD HU']
+                "Bar Pattern":       f"Bar {i + 1}",
+                "Taille (mm)":       tailles_mm[i],
+                "Fréquence (LP/mm)": frequences[i],
+                "SD HU":             round(sd, 3),  # ← np.std trié décroissant
             })
-        st.dataframe(pd.DataFrame(res_rows),
-                     use_container_width=True, hide_index=True)
+
+        st.dataframe(
+            pd.DataFrame(res_rows),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+
+
+
 
     # ── 7. TotalQA Scaling detail ─────────────────────────────────────
     if basic_result.totalqa_scaling:

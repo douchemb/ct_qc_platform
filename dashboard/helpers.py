@@ -124,12 +124,18 @@ def render_ge_dicom_image(
     window_width: float = 400.0,
     caption: str = "",
     use_column_width: bool = True,
-) -> np.ndarray:
-    """Full pipeline: DICOM dataset → windowed uint8 → st.image() display.
+) -> tuple[np.ndarray, np.ndarray]:
+    """Full pipeline: DICOM dataset → HU array + windowed uint8 → st.image().
 
-    Convenience function that chains dicom_to_hu() → apply_windowing()
-    and renders directly in Streamlit. Returns the uint8 image for
-    optional downstream use (overlay drawing, saving, etc.).
+    Chains dicom_to_hu() → apply_windowing() and renders in Streamlit.
+    Returns BOTH matrices to enforce strict separation between physics
+    calculations and visual rendering:
+
+      - img_hu_raw  (float32, HU)  → USE FOR ALL STATISTICS (Mean, SD, Contrast)
+      - img_windowed (uint8, 0-255) → USE ONLY FOR st.image() DISPLAY
+
+    ⚠️  RULE: Never pass img_windowed to np.mean() / np.std().
+              Always use img_hu_raw for any physical measurement.
 
     Parameters
     ----------
@@ -146,8 +152,10 @@ def render_ge_dicom_image(
 
     Returns
     -------
-    np.ndarray
-        The uint8 windowed image (for further processing if needed).
+    tuple[np.ndarray, np.ndarray]
+        (img_hu_raw, img_windowed)
+        img_hu_raw   : float32 HU array  — for statistics only
+        img_windowed : uint8 array 0-255 — for st.image() only
 
     Example — Streamlit integration
     --------------------------------
@@ -156,27 +164,34 @@ def render_ge_dicom_image(
     >>> from dashboard.helpers import render_ge_dicom_image
     >>>
     >>> ds = pydicom.dcmread("CT.TPSQA2017.Image 36.dcm", force=True)
-    >>> img = render_ge_dicom_image(
+    >>> img_hu_raw, img_windowed = render_ge_dicom_image(
     ...     ds,
     ...     window_level=0,
     ...     window_width=400,
     ...     caption="GE Helios — Uniformité (WL=0 / WW=400)"
     ... )
+    >>> # ✅ Correct: calcul sur HU brut
+    >>> mean_hu = np.mean(img_hu_raw[roi_mask])
+    >>> # ✅ Correct: affichage sur image fenêtrée
+    >>> # (déjà rendu par la fonction via st.image)
     """
-    # Step 1: Raw pixels → HU
-    hu_array = dicom_to_hu(ds)
+    # Step 1: Raw pixels → HU  (float32, valeurs physiques en Hounsfield Units)
+    # ⚠️ img_hu_raw est la SEULE matrice autorisée pour np.mean / np.std
+    img_hu_raw = dicom_to_hu(ds)
 
-    # Step 2: HU → Windowed uint8
-    windowed = apply_windowing(hu_array, window_level, window_width)
+    # Step 2: HU → Windowed uint8  (remapping visuel 0-255 pour l'affichage)
+    # ⚠️ img_windowed est UNIQUEMENT destinée à st.image() — ne jamais calculer dessus
+    img_windowed = apply_windowing(img_hu_raw, window_level, window_width)
 
-    # Step 3: Render in Streamlit
+    # Step 3: Render in Streamlit — affichage visuel uniquement
     display_caption = caption or (
         f"WL={window_level:.0f} HU | WW={window_width:.0f} HU"
     )
-    st.image(windowed, caption=display_caption,
+    st.image(img_windowed, caption=display_caption,
              use_column_width=use_column_width)
 
-    return windowed
+    # Retourner les DEUX matrices — l'appelant choisit explicitement laquelle utiliser
+    return img_hu_raw, img_windowed
 
 
 # ── Urgency color mapping — matches FailurePredictor.URGENCY_ORDER ────────
