@@ -68,17 +68,33 @@ class SiemensWaterbathResult:
 # Geometry & Metadata Extraction
 # ══════════════════════════════════════════════════════════════════
 
-def _detect_phantom_center_and_radius(hu_array: np.ndarray) -> tuple[int, int, float]:
-    """Detect phantom center and radius using threshold at HU > -200."""
+def _detect_phantom_center_and_radius(
+    hu_array: np.ndarray,
+    manufacturer: str = "SIEMENS",
+) -> tuple[int, int, float]:
+    """Detect phantom center and radius.
+
+    For SIEMENS: uses mean of thresholded mask (stable, phantom is centered).
+    For CANON:   uses scipy center_of_mass (robust to off-center phantoms).
+    """
     mask = hu_array > -200.0
     ys, xs = np.where(mask)
     if len(ys) < 100:
         # Fallback to image center
         cr, cc = hu_array.shape[0] // 2, hu_array.shape[1] // 2
         return cr, cc, 100.0
-    cr = int(np.mean(ys))
-    cc = int(np.mean(xs))
-    # Estimate radius from horizontal span
+
+    if manufacturer == "CANON":
+        # CANON: Use center_of_mass for robust centering on off-center phantoms
+        from scipy.ndimage import center_of_mass
+        cy_f, cx_f = center_of_mass(mask)
+        cr, cc = int(cy_f), int(cx_f)
+    else:
+        # SIEMENS: Use simple mean (phantom is always centered)
+        cr = int(np.mean(ys))
+        cc = int(np.mean(xs))
+
+    # Estimate radius from horizontal span at center row
     row_mask = mask[cr, :]
     cols = np.where(row_mask)[0]
     radius = (cols[-1] - cols[0]) / 2.0 if len(cols) >= 2 else 100.0
@@ -87,23 +103,34 @@ def _detect_phantom_center_and_radius(hu_array: np.ndarray) -> tuple[int, int, f
 
 def _build_siemens_rois(
     hu_array: np.ndarray,
+    manufacturer: str = "SIEMENS",
 ) -> tuple[dict[str, ROIDescriptor], int, int, float]:
-    """Build TotalQA Siemens ROIs: 40% center, 10% edges at 80% radius.
+    """Build TotalQA Siemens ROIs: 40% center, 10% edges.
+
+    Edge placement distance varies by manufacturer:
+      - SIEMENS: 80% of radius (phantom is perfectly centered)
+      - CANON:   60% of radius (phantom may be off-center, keep ROIs safe)
 
     Returns (rois_dict, center_row, center_col, phantom_radius_px).
     """
-    cr, cc, radius = _detect_phantom_center_and_radius(hu_array)
+    cr, cc, radius = _detect_phantom_center_and_radius(hu_array, manufacturer)
 
-    # Center ROI: 40% of diameter = 40% of 2*radius
-    center_size = int(radius * 2 * 0.40)
+    # Center ROI sizing
+    if manufacturer == "CANON":
+        # CANON: Fixed 100x100 px center ROI (strict, avoids oversized coverage)
+        center_size = 100
+    else:
+        # SIEMENS: 40% of diameter = 40% of 2*radius
+        center_size = int(radius * 2 * 0.40)
     center_half = center_size // 2
 
     # Edge ROI: 10% of diameter
     edge_size = int(radius * 2 * 0.10)
     edge_half = edge_size // 2
 
-    # Edge placement: at 80% of radius from center
-    edge_offset = int(radius * 0.80)
+    # Edge placement: manufacturer-specific distance multiplier
+    distance_multiplier = 0.60 if manufacturer == "CANON" else 0.80
+    edge_offset = int(radius * distance_multiplier)
 
     rois = {
         "center": ROIDescriptor("center",
@@ -459,13 +486,17 @@ def _generate_nps_plot(
 def run_siemens_analysis(
     valid_datasets: list[tuple[str, pydicom.Dataset]],
     scanner_id: str,
+    manufacturer: str = "SIEMENS",
 ) -> None:
-    """Full Siemens Waterbath TotalQA pipeline.
+    """Full Siemens/Canon Waterbath TotalQA pipeline.
 
     Accepts pre-read (filename, dataset) tuples from the orchestrator.
     Analyzes ALL slices, generates per-slice metrics,
     simulation figures, and TotalQA plots. Stores everything in
     st.session_state for downstream tab rendering.
+
+    Canon uses the same physics pipeline but with dynamic centering
+    via scipy center_of_mass (robust to off-center phantoms).
     """
     from datetime import datetime
 
@@ -476,7 +507,8 @@ def run_siemens_analysis(
         st.error("❌ No valid DICOM files found.")
         return
 
-    st.info(f"🔬 **Siemens Waterbath Pipeline** — {len(valid_datasets)} slices detected")
+    pipeline_label = "Canon Aquilion LB" if manufacturer == "CANON" else "Siemens Waterbath"
+    st.info(f"🔬 **{pipeline_label} Pipeline** — {len(valid_datasets)} slices detected")
 
     # Sort by InstanceNumber
     all_datasets = sorted(
@@ -504,8 +536,8 @@ def run_siemens_analysis(
                 pixel_data = ds.pixel_array.astype(np.float64)
                 hu_array = pixel_data * slope + intercept
 
-                # Build ROIs
-                rois, cr, cc, radius = _build_siemens_rois(hu_array)
+                # Build ROIs (manufacturer-aware centering)
+                rois, cr, cc, radius = _build_siemens_rois(hu_array, manufacturer)
 
                 # Compute stats
                 means, sds = _compute_roi_stats(hu_array, rois)
@@ -550,16 +582,17 @@ def run_siemens_analysis(
         return
 
     n = len(result.slices)
-    st.success(f"✅ Siemens Waterbath: {n} slice(s) analyzed")
+    st.success(f"✅ {pipeline_label}: {n} slice(s) analyzed")
 
     # ── Generate simulation figure (first slice) ──────────────────
     if first_hu is not None and first_rois:
         try:
             fig_sim = render_roi_drawing(
                 first_hu, first_rois, pixel_spacing,
-                title=f"Siemens Waterbath — ROIs (Slice {result.slices[0].image_number})",
-                slice_type="water")
-            simulation_figs["💧 Siemens Waterbath ROIs"] = fig_sim
+                title=f"{pipeline_label} — ROIs (Slice {result.slices[0].image_number})",
+                slice_type="water",
+                override_center=(first_cr, first_cc))
+            simulation_figs[f"💧 {pipeline_label} ROIs"] = fig_sim
         except Exception as exc:
             logger.warning("Simulation figure failed: %s", exc)
 
@@ -591,9 +624,20 @@ def run_siemens_analysis(
     siemens_kpi = {}
     if result.slices:
         s0 = result.slices[0]
-        # KPI 1: Noise — SD of center ROI
+
+        # KPI 1: Noise — SD of center ROI (thickness-aware limit)
+        # Physics: noise ∝ 1/√(slice_thickness). Thin slices have more noise.
+        import math
+        base_noise_limit = 5.0
+        base_thickness = 5.0  # mm — standard reference thickness
+        current_thickness = s0.slice_thickness if s0.slice_thickness > 0 else 5.0
+        dynamic_noise_limit = base_noise_limit * math.sqrt(
+            base_thickness / current_thickness
+        )
         siemens_kpi["noise_sd"] = s0.center_sd
-        siemens_kpi["noise_passed"] = s0.center_sd <= 5.0
+        siemens_kpi["noise_limit"] = dynamic_noise_limit
+        siemens_kpi["noise_thickness"] = current_thickness
+        siemens_kpi["noise_passed"] = s0.center_sd <= dynamic_noise_limit
 
         # KPI 2: Uniformity — max |edge - center| (already computed as edge_diffs)
         max_diff = max(s0.edge_diffs.values()) if s0.edge_diffs else 0.0
@@ -608,20 +652,24 @@ def run_siemens_analysis(
         siemens_kpi["hu_precision_passed"] = hu_delta <= 4.0
 
         # KPI 4: Scaling — phantom diameter H/V via threshold edge detection
+        # Canon Aquilion LB phantom = 330 mm, Siemens Waterbath = 200 mm
+        nominal_diameter = 330.0 if manufacturer == "CANON" else 200.0
+        scaling_tolerance = 5.0 if manufacturer == "CANON" else 2.0
         if first_hu is not None:
             try:
                 h_mm, v_mm = _measure_siemens_diameter(first_hu, pixel_spacing)
                 siemens_kpi["scaling_h_mm"] = h_mm
                 siemens_kpi["scaling_v_mm"] = v_mm
-                siemens_kpi["scaling_nominal_mm"] = 200.0
+                siemens_kpi["scaling_nominal_mm"] = nominal_diameter
                 siemens_kpi["scaling_passed"] = (
-                    abs(h_mm - 200.0) <= 2.0 and abs(v_mm - 200.0) <= 2.0
+                    abs(h_mm - nominal_diameter) <= scaling_tolerance
+                    and abs(v_mm - nominal_diameter) <= scaling_tolerance
                 )
             except Exception as exc:
-                logger.warning("Siemens scaling measurement failed: %s", exc)
+                logger.warning("Scaling measurement failed: %s", exc)
                 siemens_kpi["scaling_h_mm"] = 0.0
                 siemens_kpi["scaling_v_mm"] = 0.0
-                siemens_kpi["scaling_nominal_mm"] = 200.0
+                siemens_kpi["scaling_nominal_mm"] = nominal_diameter
                 siemens_kpi["scaling_passed"] = False
 
     # ══════════════════════════════════════════════════════════════
@@ -638,7 +686,7 @@ def run_siemens_analysis(
     # ══════════════════════════════════════════════════════════════
     # Store in session_state
     # ══════════════════════════════════════════════════════════════
-    st.session_state["manufacturer"] = "SIEMENS"
+    st.session_state["manufacturer"] = manufacturer
     st.session_state["siemens_result"] = result
     st.session_state["siemens_kpi_metrics"] = siemens_kpi
     st.session_state["dosimetry_metrics"] = dosimetry_metrics

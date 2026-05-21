@@ -1,6 +1,7 @@
 """
 dashboard/helpers.py — Helper Utilities and Shared Components.
-KPI cards, dark matplotlib style, figure export, upload handling.
+KPI cards, dark matplotlib style, figure export, upload handling,
+and DICOM windowing utilities for GE Helios QA phantom rendering.
 """
 from __future__ import annotations
 
@@ -10,7 +11,172 @@ from pathlib import Path
 from typing import Optional
 
 import matplotlib.pyplot as plt
+import numpy as np
 import streamlit as st
+
+
+# ═══════════════════════════════════════════════════════════════════
+# DICOM Windowing Utilities — GE Helios QA Phantom Rendering
+# ═══════════════════════════════════════════════════════════════════
+# These functions apply radiological windowing (Window Level / Window
+# Width) to produce high-contrast images matching commercial viewers
+# like TotalQA, instead of the washed-out grayscale from raw pixels.
+#
+# Pipeline:  raw pixels → HU → windowed clip → uint8 (0–255)
+#
+# Default WL=50 / WW=400 is optimized for GE Helios water+plastic
+# phantoms. Adjust per slice type:
+#   Water/Uniformity:  WL=0,   WW=400
+#   Contrast (plastic): WL=0,  WW=2500
+#   Resolution (bars):  WL=0,  WW=2000
+# ═══════════════════════════════════════════════════════════════════
+
+def dicom_to_hu(ds) -> np.ndarray:
+    """Convert raw DICOM pixel data to Hounsfield Units (HU).
+
+    Extracts RescaleSlope (0028,1053) and RescaleIntercept (0028,1052)
+    from the dataset and applies the standard DICOM affine transform:
+        HU = RescaleSlope × StoredPixelValue + RescaleIntercept
+
+    For GE Discovery RT datasets missing standard rescale tags, falls
+    back to safe defaults (slope=1.0, intercept=-1024.0) matching the
+    GE DICOM Conformance Statement.
+
+    Parameters
+    ----------
+    ds : pydicom.Dataset
+        Loaded DICOM dataset with pixel data.
+
+    Returns
+    -------
+    np.ndarray
+        Float32 2D array of HU values.
+    """
+    # Extract rescale parameters — GE-safe defaults
+    slope = float(getattr(ds, "RescaleSlope", 1.0))
+    intercept = float(getattr(ds, "RescaleIntercept", -1024.0))
+
+    # Extract pixel array and handle multi-frame
+    pixel_array = ds.pixel_array
+    if pixel_array.ndim > 2:
+        pixel_array = pixel_array[0]
+
+    # Apply HU transform: DICOM PS3.3 C.11.1.1.2
+    hu_array = slope * pixel_array.astype(np.float32) + intercept
+
+    return hu_array
+
+
+def apply_windowing(
+    hu_array: np.ndarray,
+    window_level: float = 50.0,
+    window_width: float = 400.0,
+) -> np.ndarray:
+    """Apply radiological windowing to a HU array → uint8 for display.
+
+    Implements the standard DICOM VOI LUT windowing transform:
+        1. Compute bounds: lower = WL - WW/2,  upper = WL + WW/2
+        2. Clip all HU values to [lower, upper] via numpy.clip
+        3. Normalize linearly to [0, 255] and cast to uint8
+
+    This produces the high-contrast images matching commercial QA
+    viewers (TotalQA, SunCheck) instead of pale, washed-out renders.
+
+    Parameters
+    ----------
+    hu_array : np.ndarray
+        2D float array of Hounsfield Unit values.
+    window_level : float
+        Center of the display window in HU (default: 50 for QA phantoms).
+    window_width : float
+        Width of the display window in HU (default: 400 for water+plastic).
+
+    Returns
+    -------
+    np.ndarray
+        2D uint8 array (0–255), ready for st.image() or PIL rendering.
+
+    Examples
+    --------
+    >>> img = apply_windowing(hu_array, window_level=0, window_width=400)
+    >>> st.image(img, caption="Uniformité — WL=0 / WW=400")
+    """
+    # Compute window bounds
+    lower = window_level - window_width / 2.0
+    upper = window_level + window_width / 2.0
+
+    # Clip HU values to the display window
+    clipped = np.clip(hu_array, lower, upper)
+
+    # Normalize to [0, 255] — linear mapping
+    if upper > lower:
+        normalized = (clipped - lower) / (upper - lower) * 255.0
+    else:
+        # Degenerate case: zero-width window → flat gray
+        normalized = np.full_like(clipped, 128.0)
+
+    return normalized.astype(np.uint8)
+
+
+def render_ge_dicom_image(
+    ds,
+    window_level: float = 50.0,
+    window_width: float = 400.0,
+    caption: str = "",
+    use_column_width: bool = True,
+) -> np.ndarray:
+    """Full pipeline: DICOM dataset → windowed uint8 → st.image() display.
+
+    Convenience function that chains dicom_to_hu() → apply_windowing()
+    and renders directly in Streamlit. Returns the uint8 image for
+    optional downstream use (overlay drawing, saving, etc.).
+
+    Parameters
+    ----------
+    ds : pydicom.Dataset
+        Loaded GE DICOM dataset with pixel data.
+    window_level : float
+        Window center in HU (default: 50).
+    window_width : float
+        Window width in HU (default: 400).
+    caption : str
+        Optional caption displayed below the image.
+    use_column_width : bool
+        If True, stretch image to column width in Streamlit.
+
+    Returns
+    -------
+    np.ndarray
+        The uint8 windowed image (for further processing if needed).
+
+    Example — Streamlit integration
+    --------------------------------
+    >>> import pydicom
+    >>> import streamlit as st
+    >>> from dashboard.helpers import render_ge_dicom_image
+    >>>
+    >>> ds = pydicom.dcmread("CT.TPSQA2017.Image 36.dcm", force=True)
+    >>> img = render_ge_dicom_image(
+    ...     ds,
+    ...     window_level=0,
+    ...     window_width=400,
+    ...     caption="GE Helios — Uniformité (WL=0 / WW=400)"
+    ... )
+    """
+    # Step 1: Raw pixels → HU
+    hu_array = dicom_to_hu(ds)
+
+    # Step 2: HU → Windowed uint8
+    windowed = apply_windowing(hu_array, window_level, window_width)
+
+    # Step 3: Render in Streamlit
+    display_caption = caption or (
+        f"WL={window_level:.0f} HU | WW={window_width:.0f} HU"
+    )
+    st.image(windowed, caption=display_caption,
+             use_column_width=use_column_width)
+
+    return windowed
 
 
 # ── Urgency color mapping — matches FailurePredictor.URGENCY_ORDER ────────

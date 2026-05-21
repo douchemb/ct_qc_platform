@@ -111,11 +111,18 @@ def _collect_health_metrics() -> dict:
     noise_critical = 7.0 * correction_factor
 
     # ── Extract raw values ────────────────────────────────────────
-    if manufacturer == "SIEMENS" and kpi:
-        # Noise (SD): dynamically adjusted for mA
+    if manufacturer in ("SIEMENS", "CANON") and kpi:
+        # Noise (SD): use thickness-aware limit from KPI pipeline
         noise_sd = kpi.get("noise_sd")
+        kpi_noise_limit = kpi.get("noise_limit", noise_safe)
         if noise_sd is not None:
-            metrics["noise"] = _health_score_plateau(noise_sd, noise_safe, noise_critical)
+            # Scale safe/critical to match thickness-adjusted limit
+            thickness_ratio = kpi_noise_limit / 5.0 if kpi_noise_limit > 0 else 1.0
+            metrics["noise"] = _health_score_plateau(
+                noise_sd,
+                noise_safe * thickness_ratio,
+                noise_critical * thickness_ratio,
+            )
 
         # Uniformity (NUI): healthy < 3.0, critical > 5.5
         nui = kpi.get("uniformity_nui")
@@ -127,13 +134,21 @@ def _collect_health_metrics() -> dict:
         if hu_delta is not None:
             metrics["hu_precision"] = _health_score_plateau(hu_delta, 3.0, 5.0)
 
-        # Scaling Error: max deviation from nominal (200.0 mm)
+        # Scaling Error: max deviation from dynamic nominal
+        # Belt-and-suspenders: derive default nominal from manufacturer
+        # if the KPI dict is missing the key (Canon=330mm, Siemens=200mm)
+        default_nominal = 330.0 if manufacturer == "CANON" else 200.0
         h_mm = kpi.get("scaling_h_mm")
         v_mm = kpi.get("scaling_v_mm")
+        nominal = kpi.get("scaling_nominal_mm", default_nominal)
         if h_mm is not None and h_mm > 0 and v_mm is not None and v_mm > 0:
-            scaling_error = max(abs(h_mm - 200.0), abs(v_mm - 200.0))
-            metrics["scaling_h"] = _health_score_plateau(scaling_error, 1.0, 2.5)
-            metrics["scaling_v"] = metrics["scaling_h"]  # same score, single error
+            scaling_error = max(abs(h_mm - nominal), abs(v_mm - nominal))
+            # Scale tolerance proportionally to phantom size
+            # Base: 1.0/2.5 mm for 200mm phantom → proportional for larger
+            scale_ratio = nominal / 200.0
+            metrics["scaling_h"] = _health_score_plateau(
+                scaling_error, 1.0 * scale_ratio, 2.5 * scale_ratio)
+            metrics["scaling_v"] = metrics["scaling_h"]
 
     elif basic is not None:
         # GE pipeline — mA-aware noise scoring

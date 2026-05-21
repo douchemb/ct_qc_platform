@@ -2,7 +2,7 @@
 dashboard/tab_predictive.py — Tab 5: Predictif (AI Prognostic)
 
 Multi-Vendor 4-Component Predictive Maintenance Dashboard.
-Dynamically selects Siemens or GE RandomForest models based on the
+Dynamically selects Siemens, GE, or Canon RandomForest models based on the
 detected manufacturer and renders:
 
   1. Input Metrics Strip  — What the AI is analyzing today
@@ -12,6 +12,7 @@ detected manufacturer and renders:
 """
 from __future__ import annotations
 
+import math
 import sys
 from pathlib import Path
 from typing import Optional
@@ -124,6 +125,53 @@ GE_COMPONENTS = {
     },
 }
 
+CANON_COMPONENTS = {
+    "tube": {
+        "label": "Tube a Rayons X",
+        "icon": "🔌",
+        "metric_label": "Noise (SD)",
+        "failure_desc": "Filament / Anode usee",
+        "action": (
+            "Bruit image en augmentation. Verifier les logs de "
+            "refroidissement et l'usure de l'anode Canon Aquilion. "
+            "Planifier un remplacement preventif si SD > 6.0 HU."
+        ),
+    },
+    "gantry": {
+        "label": "Gantry / Roulement",
+        "icon": "⚡",
+        "metric_label": "Uniformite (NUI)",
+        "failure_desc": "Usure roulements / Derive detecteurs",
+        "action": (
+            "Uniformite en degradation. Inspecter les roulements du "
+            "gantry et executer une calibration a l'air. "
+            "Commander kit de roulements si NUI > 4.0 HU."
+        ),
+    },
+    "table": {
+        "label": "Table Patient",
+        "icon": "⚙️",
+        "metric_label": "Scaling V (mm)",
+        "failure_desc": "Friction / Desalignement mecanique",
+        "action": (
+            "Erreur geometrique detectee. Verifier l'alignement des "
+            "lasers, la planeite de la table et les rails de "
+            "positionnement. Recalibrer le systeme de positionnement."
+        ),
+    },
+    "generator": {
+        "label": "Generateur HT",
+        "icon": "🔋",
+        "metric_label": "Precision HU",
+        "failure_desc": "Derive kVp / Calibration requise",
+        "action": (
+            "Precision HU en degradation. Executer la calibration HV "
+            "automatique (Service > Calibration > kVp). "
+            "Verifier les condensateurs du generateur haute tension."
+        ),
+    },
+}
+
 HORIZON_DAYS = 90
 
 
@@ -145,17 +193,65 @@ def _extract_metrics() -> tuple[str, dict[str, Optional[float]]]:
     advanced = st.session_state.get("advanced_result")
     acq_params = st.session_state.get("acquisition_params", {})
 
-    if manufacturer == "SIEMENS" and kpi:
+    if manufacturer in ("SIEMENS", "CANON") and kpi:
         hu_delta = kpi.get("hu_precision_delta")
+        raw_noise = kpi.get("noise_sd")
         metrics = {
-            "Noise_HU": kpi.get("noise_sd"),
+            "Noise_HU": raw_noise,
             "Uniformity_HU": kpi.get("uniformity_nui"),
             "Scaling_V_mm": kpi.get("scaling_v_mm"),
             "HU_Precision": abs(hu_delta) if hu_delta is not None else None,
-            "kVp": acq_params.get("kvp"),
-            "mAs": acq_params.get("mas"),
         }
-        return "SIEMENS", metrics, {}
+
+        # Siemens also includes acquisition context features
+        if manufacturer == "SIEMENS":
+            metrics["kVp"] = acq_params.get("kvp")
+            metrics["mAs"] = acq_params.get("mas")
+
+        # Imputation for missing QA metrics (both Siemens & Canon)
+        imputed = {}
+        if metrics["Noise_HU"] is None:
+            metrics["Noise_HU"] = 3.0
+            imputed["Noise_HU"] = "Baseline (3.0 HU)"
+        if metrics["Uniformity_HU"] is None:
+            metrics["Uniformity_HU"] = 0.0
+            imputed["Uniformity_HU"] = "Baseline (0.0 HU)"
+        if metrics["Scaling_V_mm"] is None:
+            nominal = 330.0 if manufacturer == "CANON" else 200.0
+            metrics["Scaling_V_mm"] = nominal
+            imputed["Scaling_V_mm"] = f"Nominal ({nominal:.0f} mm)"
+        if metrics["HU_Precision"] is None:
+            metrics["HU_Precision"] = 0.0
+            imputed["HU_Precision"] = "Baseline (0.0 HU)"
+
+        # ── Canon Noise Normalization ──────────────────────────────
+        # The Canon RF models were trained on 5.0 mm slice noise.
+        # Physics: noise ~ 1/sqrt(thickness). A 0.5 mm slice has
+        # ~3.16x more noise than a 5.0 mm slice.
+        # We normalize to the 5.0 mm equivalent so the model
+        # doesn't panic on thin-slice protocols.
+        if manufacturer == "CANON":
+            actual_thickness = acq_params.get("slice_thickness", 5.0)
+            if not actual_thickness or actual_thickness <= 0:
+                actual_thickness = 5.0
+            actual_thickness = float(actual_thickness)
+
+            REFERENCE_THICKNESS = 5.0  # mm — training baseline
+            raw_noise_val = metrics["Noise_HU"]
+
+            if actual_thickness != REFERENCE_THICKNESS:
+                # Normalize: noise_5mm = noise_raw * sqrt(thickness / 5.0)
+                normalized_noise = raw_noise_val * math.sqrt(
+                    actual_thickness / REFERENCE_THICKNESS
+                )
+                metrics["Noise_HU_Raw"] = raw_noise_val
+                metrics["Noise_HU"] = normalized_noise
+                metrics["Noise_Thickness_mm"] = actual_thickness
+            else:
+                metrics["Noise_HU_Raw"] = raw_noise_val
+                metrics["Noise_Thickness_mm"] = actual_thickness
+
+        return manufacturer, metrics, imputed
 
     # GE pipeline
     metrics: dict[str, Optional[float]] = {
@@ -262,20 +358,37 @@ def render_tab_predictive(scanner_id: str) -> list:
     hdr("🤖 Intelligence Artificielle — Maintenance Predictive")
     st.caption(
         "Modeles Random Forest entraines sur les Jumeaux Numeriques "
-        "SOMATOM go.Sim (Siemens) et Discovery RT (GE). "
+        "SOMATOM go.Sim (Siemens), Discovery RT (GE) et Aquilion LB (Canon). "
         "Prediction de la Duree de Vie Residuelle (RUL) des 4 composants "
         "critiques a partir des metriques QA du jour."
     )
 
     # ── 1. Extract metrics ────────────────────────────────────────
     manufacturer, metrics, imputed = _extract_metrics()
-    components = GE_COMPONENTS if manufacturer == "GE" else SIEMENS_COMPONENTS
+
+    # ── Select component map based on manufacturer ────────────────
+    if manufacturer == "GE":
+        components = GE_COMPONENTS
+    elif manufacturer == "CANON":
+        components = CANON_COMPONENTS
+    else:
+        components = SIEMENS_COMPONENTS
     missing = [k for k, v in metrics.items() if v is None]
     all_available = len(missing) == 0
 
     # ── 2. Input Metrics — Dynamic Cards ─────────────────────────
-    vendor_label = "GE Discovery RT" if manufacturer == "GE" else "Siemens SOMATOM"
-    vendor_icon = "🔵" if manufacturer == "GE" else "🟠"
+    vendor_labels = {
+        "GE": "GE Discovery RT",
+        "SIEMENS": "Siemens SOMATOM",
+        "CANON": "Canon Aquilion LB",
+    }
+    vendor_icons = {
+        "GE": "🔵",
+        "SIEMENS": "🟠",
+        "CANON": "🟣",
+    }
+    vendor_label = vendor_labels.get(manufacturer, manufacturer)
+    vendor_icon = vendor_icons.get(manufacturer, "🟠")
 
     st.markdown(
         f"### {vendor_icon} Fabricant detecte : {vendor_label}"
@@ -305,6 +418,64 @@ def render_tab_predictive(scanner_id: str) -> list:
                 value=f"{metrics['HU_Precision']:.3f} HU",
                 help=imputed.get("HU_Precision"),
             )
+        elif manufacturer == "CANON":
+            # Canon: 4 columns ONLY (No kVp, No mAs)
+            # Show RAW noise in UI, but normalized noise goes to AI
+            raw_noise = metrics.get("Noise_HU_Raw", metrics["Noise_HU"])
+            norm_noise = metrics["Noise_HU"]
+            thickness = metrics.get("Noise_Thickness_mm", 5.0)
+            is_normalized = abs(raw_noise - norm_noise) > 0.001
+
+            mc1, mc2, mc3, mc4 = st.columns(4)
+            noise_help = (
+                f"Bruit brut: {raw_noise:.3f} HU @ {thickness:.1f} mm | "
+                f"Normalise 5.0mm: {norm_noise:.3f} HU"
+                if is_normalized
+                else imputed.get("Noise_HU")
+            )
+            mc1.metric(
+                label="🔊 Bruit / Noise",
+                value=f"{raw_noise:.3f} HU",
+                help=noise_help,
+            )
+            mc2.metric(
+                label="📊 Uniformite (NUI)",
+                value=f"{metrics['Uniformity_HU']:.3f} HU",
+                help=imputed.get("Uniformity_HU"),
+            )
+            mc3.metric(
+                label="📏 Scaling Vertical",
+                value=f"{metrics['Scaling_V_mm']:.3f} mm",
+                help=imputed.get("Scaling_V_mm"),
+            )
+            mc4.metric(
+                label="🎯 Precision HU",
+                value=f"{metrics['HU_Precision']:.3f} HU",
+                help=imputed.get("HU_Precision"),
+            )
+
+            # Show normalization notice if noise was adjusted
+            if is_normalized:
+                st.markdown(
+                    f"""
+                    <div style="
+                        background: linear-gradient(135deg, rgba(163,113,247,0.08), rgba(88,166,255,0.08));
+                        border: 1px solid rgba(163,113,247,0.20);
+                        border-radius: 8px;
+                        padding: 10px 16px;
+                        margin-top: 8px;
+                        font-size: 13px;
+                        color: #8b949e;
+                    ">
+                        🔬 <b>Normalisation Bruit :</b>
+                        Epaisseur de coupe = <b>{thickness:.1f} mm</b> |
+                        Bruit brut = <b>{raw_noise:.3f} HU</b> →
+                        Normalise 5.0mm = <b>{norm_noise:.3f} HU</b><br/>
+                        <em>Formule : Noise_5mm = Noise_raw × sqrt(thickness / 5.0)</em>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
         else:
             # Siemens: 6 metrics including kVp/mAs context
             mc1, mc2, mc3, mc4, mc5, mc6 = st.columns(6)
@@ -376,7 +547,18 @@ def render_tab_predictive(scanner_id: str) -> list:
             "kVp": "⚡ kVp",
             "mAs": "💡 mAs",
         }
-        labels = labels_ge if manufacturer == "GE" else labels_si
+        labels_canon = {
+            "Noise_HU": "🔊 Bruit / Noise",
+            "Uniformity_HU": "📊 Uniformite",
+            "Scaling_V_mm": "📏 Scaling V",
+            "HU_Precision": "🎯 Precision HU",
+        }
+        if manufacturer == "GE":
+            labels = labels_ge
+        elif manufacturer == "CANON":
+            labels = labels_canon
+        else:
+            labels = labels_si
         for col, k in zip(cols, keys):
             v = metrics[k]
             col.metric(

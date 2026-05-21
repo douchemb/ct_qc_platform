@@ -18,7 +18,7 @@ def render_tab_advanced(advanced_result: AdvancedQAResult) -> list[tuple[str, pl
     export_figures: list[tuple[str, plt.Figure]] = []
 
     # ── SIEMENS MODE: Noise/Mean bar chart + H/V profiles ─────────
-    if st.session_state.get("manufacturer") == "SIEMENS":
+    if st.session_state.get("manufacturer") in ("SIEMENS", "CANON"):
         return _render_siemens_advanced(export_figures)
 
     # ── GE MODE: NPS + Resolution + Scaling ───────────────────────

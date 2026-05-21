@@ -25,19 +25,24 @@ ROI_COLORS = {
     "center": "#00d4ff", "center_water": "#00d4ff", "water": "#00d4ff",
     "peripheral_12": "#ffd700", "peripheral_3": "#ffd700",
     "peripheral_6": "#ffd700", "peripheral_9": "#ffd700",
-    # Contrast zones (TotalQA)
-    "top_plastic": "#ff6b6b", "top_water": "#51cf66",
-    "bottom_plastic": "#cc5de8", "bottom_water": "#ff922b",
-    # Resolution bar patterns (TotalQA)
-    "bar_1": "#ff0000", "bar_2": "#ff6b6b", "bar_3": "#ffd700",
-    "bar_4": "#51cf66", "bar_5": "#74c0fc",
+    # Contrast zones (TotalQA) — uniform red to match commercial viewer
+    "top_plastic": "#ff0000", "top_water": "#ff0000",
+    "bottom_plastic": "#ff0000", "bottom_water": "#ff0000",
+    # Resolution bar patterns (TotalQA) — uniform red to match reference
+    "bar_1": "#ff0000", "bar_2": "#ff0000", "bar_3": "#ff0000",
+    "bar_4": "#ff0000", "bar_5": "#ff0000",
 }
 
 # Window/level presets per slice type
+# Optimized for GE Helios water+plastic QA phantoms.
+# Previous WW=2500/2000 caused pale, washed-out images because the
+# useful HU range (water ~0, LDPE ~-100, Acrylic ~120, Delrin ~340)
+# was spread across far too many gray levels.
+# TotalQA-aligned: tight windows that maximize contrast on phantom materials.
 _WINDOW_PRESETS: dict[str, tuple[int, int]] = {
-    "water":      (0,   400),
-    "contrast":   (0,   2500),
-    "resolution": (0,   2000),
+    "water":      (0,   400),   # [-200, +200] — water uniformity
+    "contrast":   (50,  400),   # [-150, +250] — plastic inserts pop
+    "resolution": (50,  400),   # [-150, +250] — bar patterns visible
 }
 
 # Human-readable labels for slice type display
@@ -67,6 +72,7 @@ def render_roi_drawing(
     pixel_spacing_mm: tuple,
     title: str = "ROI Placement",
     slice_type: str | None = None,
+    override_center: tuple[int, int] | None = None,
 ) -> plt.Figure:
     """
     Renders the phantom CT image with all ROI positions drawn as colored
@@ -80,6 +86,9 @@ def render_roi_drawing(
     title : plot title prefix
     slice_type : "water" | "contrast" | "resolution" | None
         Controls window/level preset and title badge.
+    override_center : (row, col) or None
+        If provided, overrides the hardcoded center for crosshair/circle
+        rendering. Used by Canon pipeline for dynamic centering.
     """
     fig, ax = plt.subplots(figsize=(7, 7), facecolor="#161b22")
     ax.set_facecolor("#0d1117")
@@ -91,22 +100,47 @@ def render_roi_drawing(
 
     # ── Dynamic phantom boundary circle ───────────────────────────────
     rows, cols = hu_array.shape
-    center_row, center_col = _detect_phantom_center(hu_array)
+    if override_center is not None:
+        center_row, center_col = float(override_center[0]), float(override_center[1])
+    else:
+        center_row, center_col = _detect_phantom_center(hu_array)
+
+    # Detect actual phantom radius from image data (threshold > -200 HU)
     px_avg = (pixel_spacing_mm[0] + pixel_spacing_mm[1]) / 2.0
-    phantom_r_px = 100.0 / px_avg
+    _mask = hu_array > -200.0
+    _row_mask = _mask[int(center_row), :]
+    _cols_hit = np.where(_row_mask)[0]
+    if len(_cols_hit) >= 2:
+        phantom_r_px = (_cols_hit[-1] - _cols_hit[0]) / 2.0 * 0.96
+    else:
+        # Fallback: 100mm / pixel_spacing
+        phantom_r_px = 100.0 / px_avg
+
     # NOTE: matplotlib uses (x, y) = (col, row) for patches
     circle = plt.Circle((center_col, center_row), phantom_r_px, fill=False,
-                         edgecolor="#ffffff", linewidth=1.0,
-                         linestyle="--", alpha=0.4)
+                         edgecolor="#ffffff", linewidth=1.5,
+                         linestyle="--", alpha=0.6)
     ax.add_patch(circle)
 
-    # ── Center crosshair (small + at detected center) ─────────────────
-    ch_len = 6  # pixels
+    # ── Center crosshair (bold + at detected/overridden center) ─────────
+    ch_len = 15  # pixels — large enough to be clearly visible
     ax.plot([center_col - ch_len, center_col + ch_len],
-            [center_row, center_row], color="#ffffff", lw=0.8, alpha=0.35)
+            [center_row, center_row],
+            color="#00ffff", lw=2.0, alpha=0.9)
     ax.plot([center_col, center_col],
             [center_row - ch_len, center_row + ch_len],
-            color="#ffffff", lw=0.8, alpha=0.35)
+            color="#00ffff", lw=2.0, alpha=0.9)
+
+    # ── TotalQA-style contrast label mapping (A/B/C/D) ─────────────────
+    # Reference: Image Owl TotalQA GE Set 1 report layout
+    _CONTRAST_LABELS = {
+        "top_plastic":    "A",
+        "top_water":      "B",
+        "bottom_plastic": "C",
+        "bottom_water":   "D",
+    }
+    is_contrast = (slice_type == "contrast")
+    is_resolution = (slice_type == "resolution")
 
     # ── Draw each ROI ─────────────────────────────────────────────────
     legend_handles = []
@@ -114,29 +148,54 @@ def render_roi_drawing(
 
     for label, roi in roi_descriptors.items():
         color = ROI_COLORS.get(label.lower(), "#ffd700")
-        rect = mpatches.Rectangle(
-            (roi.col_start, roi.row_start), roi.width_px, roi.height_px,
-            linewidth=1.8, edgecolor=color, facecolor=color, alpha=0.18,
-        )
-        ax.add_patch(rect)
-        rect_border = mpatches.Rectangle(
-            (roi.col_start, roi.row_start), roi.width_px, roi.height_px,
-            linewidth=1.8, edgecolor=color, facecolor="none",
-        )
-        ax.add_patch(rect_border)
 
-        rc = roi.row_start + roi.height_px / 2
-        cc = roi.col_start + roi.width_px / 2
+        if is_contrast:
+            # TotalQA style: red outline only, no fill
+            rect = mpatches.Rectangle(
+                (roi.col_start, roi.row_start), roi.width_px, roi.height_px,
+                linewidth=2.0, edgecolor="#ff0000", facecolor="none",
+            )
+            ax.add_patch(rect)
 
-        # Label rendering
-        display_label = label.replace("_", "\n").upper()
-        if label.lower().startswith("bar_"):
-            display_label = label.replace("bar_", "B")
-        ax.text(cc, rc, display_label,
-                ha="center", va="center", fontsize=7, color=color,
-                fontweight="bold",
-                bbox=dict(boxstyle="round,pad=0.2", facecolor="#0d1117",
-                          edgecolor="none", alpha=0.7))
+            # Single-letter label to the LEFT of the rectangle
+            rc = roi.row_start + roi.height_px / 2
+            lx = roi.col_start - 12  # offset left of rectangle edge
+            display_label = _CONTRAST_LABELS.get(label.lower(), label[0].upper())
+            ax.text(lx, rc, display_label,
+                    ha="right", va="center", fontsize=11, color="#ff0000",
+                    fontweight="bold")
+
+        elif is_resolution:
+            # TotalQA style: red outline squares only, no fill, no labels
+            rect = mpatches.Rectangle(
+                (roi.col_start, roi.row_start), roi.width_px, roi.height_px,
+                linewidth=1.5, edgecolor="#ff0000", facecolor="none",
+            )
+            ax.add_patch(rect)
+
+        else:
+            # Default style: colored fill + border for water/uniformity
+            rect = mpatches.Rectangle(
+                (roi.col_start, roi.row_start), roi.width_px, roi.height_px,
+                linewidth=1.8, edgecolor=color, facecolor=color, alpha=0.18,
+            )
+            ax.add_patch(rect)
+            rect_border = mpatches.Rectangle(
+                (roi.col_start, roi.row_start), roi.width_px, roi.height_px,
+                linewidth=1.8, edgecolor=color, facecolor="none",
+            )
+            ax.add_patch(rect_border)
+
+            rc = roi.row_start + roi.height_px / 2
+            cc = roi.col_start + roi.width_px / 2
+
+            # Label rendering
+            display_label = label.replace("_", "\n").upper()
+            ax.text(cc, rc, display_label,
+                    ha="center", va="center", fontsize=7, color=color,
+                    fontweight="bold",
+                    bbox=dict(boxstyle="round,pad=0.2", facecolor="#0d1117",
+                              edgecolor="none", alpha=0.7))
 
         if label not in drawn_labels:
             legend_handles.append(

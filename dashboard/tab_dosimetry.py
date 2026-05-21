@@ -52,17 +52,26 @@ def render_tab_dosimetry(
     d_eff = dm.get("d_eff_cm")
     f_factor = dm.get("f_factor")
 
+    # ── Dynamic DRL limits based on scanner type ──────────────────
+    manufacturer = st.session_state.get("manufacturer", "GE")
+    if manufacturer == "CANON":
+        drl_limit = 100.0   # RT Simulation / large QA phantom
+        drl_label = "DRL RT Sim / QA"
+    else:
+        drl_limit = 25.0    # Standard diagnostic abdomen
+        drl_label = "DRL Abdomen"
+
     # ── 1. Top Row: 4 KPI Cards ───────────────────────────────────
     hdr("Métriques Dosimétriques — AAPM TG-204")
     c1, c2, c3, c4 = st.columns(4)
 
     with c1:
         if ctdi is not None:
-            drl_ok = ctdi < 25.0
+            drl_ok = ctdi < drl_limit
             st.markdown(kpi_card(
                 "💊", "CTDIvol",
                 f"{ctdi:.2f} mGy",
-                f"NRD < 25 mGy | Source: DICOM (0018,9345)",
+                f"NRD < {drl_limit:.0f} mGy ({drl_label}) | Source: DICOM",
                 drl_ok,
             ), unsafe_allow_html=True)
         else:
@@ -96,11 +105,11 @@ def render_tab_dosimetry(
 
     with c3:
         if ssde is not None:
-            ssde_ok = ssde < 25.0
+            ssde_ok = ssde < drl_limit
             st.markdown(kpi_card(
                 "🎯", "SSDE",
                 f"{ssde:.2f} mGy",
-                f"f={f_factor:.4f} × CTDIvol | TG-204",
+                f"f={f_factor:.4f} × CTDIvol | NRD < {drl_limit:.0f} mGy",
                 ssde_ok,
             ), unsafe_allow_html=True)
         else:
@@ -132,15 +141,15 @@ def render_tab_dosimetry(
 
     # ── Verdict Banner ────────────────────────────────────────────
     if ctdi is not None:
-        if ctdi < 25.0:
+        if ctdi < drl_limit:
             st.success(
-                f"✅ **CTDIvol ({ctdi:.2f} mGy) < 25 mGy** — "
-                f"Conforme aux NRD européens (EUR 16262)"
+                f"✅ **CTDIvol ({ctdi:.2f} mGy) < {drl_limit:.0f} mGy** — "
+                f"Conforme aux NRD ({drl_label})"
             )
         else:
             st.error(
-                f"❌ **CTDIvol ({ctdi:.2f} mGy) ≥ 25 mGy** — "
-                f"Dépasse les NRD (DRL abdomen = 25 mGy)"
+                f"❌ **CTDIvol ({ctdi:.2f} mGy) ≥ {drl_limit:.0f} mGy** — "
+                f"Dépasse les NRD ({drl_label} = {drl_limit:.0f} mGy)"
             )
     else:
         st.warning(

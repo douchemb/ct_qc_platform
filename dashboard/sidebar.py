@@ -36,7 +36,8 @@ def render_sidebar_and_main() -> None:
         st.markdown("### ⚙️ Paramètres")
         scanner_id = st.selectbox(
             "🏥 Choisir le Scanner",
-            options=["Scanner SIEMENS (SOMATOM)", "Scanner GE (Discovery RT)"],
+            options=["Scanner SIEMENS (SOMATOM)", "Scanner GE (Discovery RT)",
+                     "Scanner CANON (Aquilion LB)"],
             index=0,
             help="Sélectionnez le scanner pour le rapport. "
                  "La détection réelle se fait automatiquement via les en-têtes DICOM.",
@@ -49,7 +50,8 @@ def render_sidebar_and_main() -> None:
         )
         phantom_type = st.selectbox(
             "🧪 Fantôme utilisé",
-            options=["Siemens Waterbath", "GE Helios QA", "Générique / Autre"],
+            options=["Siemens Waterbath", "GE Helios QA",
+                     "Canon Waterbath", "Générique / Autre"],
             index=0,
             help="Information visuelle. Le pipeline s'adapte "
                  "automatiquement au fabricant détecté.",

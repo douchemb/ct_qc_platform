@@ -100,15 +100,26 @@ def _detect_center(hu_array: np.ndarray) -> tuple[int, int]:
 # ── GE Helios Contrast ROI geometry (physics-based mm offsets) ────
 # Physical distances from phantom center to contrast ROI centers.
 # Reference: GE Helios QA Phantom Manual P/N 2165993-100.
-_CONTRAST_FAR_OFFSET_MM = 78.0    # top/bottom water ROIs from center
-_CONTRAST_NEAR_OFFSET_MM = 24.5   # top/bottom plastic ROIs from center
-_CONTRAST_ROI_HEIGHT_MM = 29.3    # ROI height
-_CONTRAST_ROI_WIDTH_MM = 39.1     # ROI width
+# A/C inside plastic block (~±20mm extent), B/D far in pure water.
+_CONTRAST_FAR_OFFSET_MM = 50.0    # B/D water ROIs — very far from center
+_CONTRAST_NEAR_OFFSET_MM = 12.0   # A/C plastic ROIs — firmly inside block
+_CONTRAST_ROI_HEIGHT_MM = 6.0     # ROI height — thin band
+_CONTRAST_ROI_WIDTH_MM = 55.0     # ROI width  — compact inside plastic
 
-# ── GE Helios Resolution ROI geometry (physics-based mm offsets) ──
-# 5 bar pattern groups along the / diagonal at these distances.
-_BAR_DIAG_OFFSETS_MM = [39.1, 19.5, 0.0, -19.5, -39.1]
-_BAR_ROI_SIZE_MM = 11.7           # ~12 px at 0.977 mm/px
+# ── GE Helios Resolution ROI geometry ─────────────────────────────
+# Precise physics geometry based on GE Helios phantom measurements.
+# The bar pattern insert center (B3) is offset from the phantom geometric center.
+#
+# Bar center (B3) offset from phantom center (mm):
+_BAR_CENTER_OFFSET_ROW_MM = -15.4  # 24 px upward
+_BAR_CENTER_OFFSET_COL_MM = 6.8    # 6 px rightward
+
+# Diagonal offsets from bar-center (mm) — symmetric 24.4 mm spacing (25 px)
+_BAR_DIAG_OFFSETS_MM = [20.0, 3.0, -10.0, -23.0, -35.0]
+
+# ROI sizes per bar group (mm) — proportional to bar frequency
+# B1(1.6lp/mm)=largest → B5(0.6lp/mm)=smallest
+_BAR_ROI_SIZES_MM = [10.0, 8.0, 5.0, 2.0, 1.0]
 
 
 def _totalqa_contrast_rois(
@@ -153,30 +164,37 @@ def _totalqa_bar_pattern_rois(
     hu_array: np.ndarray,
     pixel_spacing: tuple[float, float] = (0.977, 0.977),
 ) -> dict[str, ROIDescriptor]:
-    """5 square ROIs on the / diagonal (bar patterns).
+    """5 scaled ROIs on the / diagonal (bar patterns).
 
-    B1: 1.6 mm bars — top-right (+39.1 mm diagonal)
-    B2: 1.3 mm bars — (+19.5 mm)
-    B3: 1.0 mm bars — center (0 mm)
-    B4: 0.8 mm bars — (-19.5 mm)
-    B5: 0.6 mm bars — bottom-left (-39.1 mm diagonal)
+    The bar pattern insert is offset upward from the phantom center.
+    ROI sizes scale proportionally: B1 (1.6 lp/mm, largest) → B5 (0.6 lp/mm, smallest).
 
-    All offsets in millimeters, converted to pixels via pixel_spacing.
-    The / diagonal means: row goes negative while col goes positive.
+    Positions are fixed and symmetric around the bar-insert center.
     """
     cr, cc = _detect_center(hu_array)
     scale_y, scale_x = pixel_spacing[0], pixel_spacing[1]
 
-    sz = max(int(round(_BAR_ROI_SIZE_MM / scale_x)), 6)
-    half = sz // 2
+    # Apply bar-insert center correction
+    bar_cr = cr + int(round(_BAR_CENTER_OFFSET_ROW_MM / scale_y))
+    bar_cc = cc + int(round(_BAR_CENTER_OFFSET_COL_MM / scale_x))
 
     rois = {}
-    for i, offset_mm in enumerate(_BAR_DIAG_OFFSETS_MM, 1):
+    for i, (offset_mm, roi_size_mm) in enumerate(
+        zip(_BAR_DIAG_OFFSETS_MM, _BAR_ROI_SIZES_MM), 1
+    ):
         # / diagonal: row = center - offset, col = center + offset
         dr = -int(round(offset_mm / scale_y))
         dc = int(round(offset_mm / scale_x))
+        sz = max(int(round(roi_size_mm / scale_x)), 6)
+        half = sz // 2
+
         rois[f"bar_{i}"] = ROIDescriptor(
-            f"bar_{i}", cr + dr - half, cc + dc - half, sz, sz)
+            f"bar_{i}",
+            bar_cr + dr - half,
+            bar_cc + dc - half,
+            sz, sz,
+        )
+
     return rois
 
 
@@ -329,7 +347,8 @@ def _build_single_slice_vol(loader, ds, rois, start_s, end_s):
 def _detect_manufacturer(uploaded_files: list) -> str:
     """Read DICOM Manufacturer tag from the first file.
 
-    Returns 'SIEMENS' or 'GE' (default if unknown).
+    Returns 'SIEMENS', 'GE', or 'CANON' (default 'GE' if unknown).
+    Canon/Toshiba DICOMs are detected and returned as 'CANON'.
     """
     for f in uploaded_files:
         try:
@@ -342,6 +361,8 @@ def _detect_manufacturer(uploaded_files: list) -> str:
                 return "SIEMENS"
             elif "GE" in mfr or "GENERAL" in mfr:
                 return "GE"
+            elif "CANON" in mfr or "TOSHIBA" in mfr:
+                return "CANON"
             else:
                 logger.info("Unknown manufacturer '%s', defaulting to GE", mfr)
                 return "GE"
@@ -356,7 +377,7 @@ def _detect_manufacturer_from_datasets(
 ) -> str:
     """Detect manufacturer from pre-read datasets.
 
-    Returns 'SIEMENS' or 'GE' (default if unknown).
+    Returns 'SIEMENS', 'GE', or 'CANON' (default 'GE' if unknown).
     """
     for _filename, ds in datasets:
         mfr = str(getattr(ds, "Manufacturer", "")).upper()
@@ -364,6 +385,8 @@ def _detect_manufacturer_from_datasets(
             return "SIEMENS"
         elif "GE" in mfr or "GENERAL" in mfr:
             return "GE"
+        elif "CANON" in mfr or "TOSHIBA" in mfr:
+            return "CANON"
         else:
             logger.info("Unknown manufacturer '%s', defaulting to GE", mfr)
             return "GE"
@@ -537,9 +560,12 @@ def run_full_analysis(
     manufacturer = _detect_manufacturer_from_datasets(valid_datasets)
     st.info(f"🏭 **Manufacturer Detected:** {manufacturer}")
 
-    if manufacturer == "SIEMENS":
+    if manufacturer in ("SIEMENS", "CANON"):
         from dashboard.siemens_waterbath import run_siemens_analysis
-        run_siemens_analysis(valid_datasets, scanner_id)
+        run_siemens_analysis(valid_datasets, scanner_id, manufacturer)
+        # Override session_state manufacturer to preserve Canon identity
+        if manufacturer == "CANON":
+            st.session_state["manufacturer"] = "CANON"
         return
 
     # ── GE Pipeline continues below ──────────────────────────────

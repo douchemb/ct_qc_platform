@@ -82,7 +82,7 @@ def render_tab_summary(
     export_figures: list[tuple[str, plt.Figure]] = []
 
     # ── SIEMENS MODE: 3 TotalQA standard tables ──────────────────────
-    if st.session_state.get("manufacturer") == "SIEMENS":
+    if st.session_state.get("manufacturer") in ("SIEMENS", "CANON"):
         return _render_siemens_summary(export_figures)
 
     # ── 1. Interactive Simulation Viewer ─────────────────────────────────
@@ -405,8 +405,10 @@ def _render_siemens_summary(
 
     # ── Simulation Viewer ─────────────────────────────────────────
     simulation_figs = st.session_state.get("simulation_figs", {})
+    manufacturer = st.session_state.get("manufacturer", "SIEMENS")
+    phantom_label = "Canon Aquilion Water Phantom" if manufacturer == "CANON" else "Siemens Waterbath"
     if simulation_figs:
-        hdr("🖼️ Visualisation des ROIs — Siemens Waterbath")
+        hdr(f"🖼️ Visualisation des ROIs — {phantom_label}")
         for label, fig in simulation_figs.items():
             render_fig(fig, f"sim_{label.replace(' ', '_')[:30]}",
                        f"siemens_sim.png", caption=label)
@@ -420,16 +422,23 @@ def _render_siemens_summary(
     # ── KPI Cards — 4 Visual Metrics ──────────────────────────────
     kpi = st.session_state.get("siemens_kpi_metrics", {})
     if kpi:
-        hdr("Métriques QA — Siemens Waterbath")
+        hdr(f"Métriques QA — {phantom_label}")
         c1, c2, c3, c4 = st.columns(4)
 
         with c1:
             noise_sd = kpi.get("noise_sd", 0.0)
             noise_ok = kpi.get("noise_passed")
+            noise_limit = kpi.get("noise_limit", 5.0)
+            noise_thick = kpi.get("noise_thickness", 5.0)
+            limit_note = (
+                f"Ajusté pour {noise_thick:.1f} mm"
+                if noise_thick != 5.0
+                else "TG-66 §5.1"
+            )
             st.markdown(kpi_card(
                 "🔊", "Bruit Image (SD)",
                 f"{noise_sd:.3f} HU",
-                f"Tolérance ≤ 5.0 HU | TG-66 §5.1",
+                f"Tolérance ≤ {noise_limit:.1f} HU | {limit_note}",
                 noise_ok,
             ), unsafe_allow_html=True)
 
@@ -457,7 +466,8 @@ def _render_siemens_summary(
         with c4:
             h_mm = kpi.get("scaling_h_mm", 0.0)
             v_mm = kpi.get("scaling_v_mm", 0.0)
-            nom = kpi.get("scaling_nominal_mm", 200.0)
+            default_nom = 330.0 if manufacturer == "CANON" else 200.0
+            nom = kpi.get("scaling_nominal_mm", default_nom)
             sc_ok = kpi.get("scaling_passed")
             st.markdown(kpi_card(
                 "📏", "Scaling (Diamètre)",
