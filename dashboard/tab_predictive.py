@@ -37,7 +37,7 @@ from inference import predict_rul  # noqa: E402
 
 SIEMENS_COMPONENTS = {
     "tube": {
-        "label": "Tube a Rayons X",
+        "label": "Tube à Rayons X",
         "icon": "🔌",
         "metric_label": "Noise (SD)",
         "failure_desc": "Filament / Anode usee",
@@ -47,8 +47,8 @@ SIEMENS_COMPONENTS = {
         ),
     },
     "gantry": {
-        "label": "Gantry / Brushblock",
-        "icon": "⚡",
+        "label": "Détecteurs / DAS",
+        "icon": "📡",
         "metric_label": "Uniformite (NUI)",
         "failure_desc": "Usure courroie / charbons",
         "action": (
@@ -57,7 +57,7 @@ SIEMENS_COMPONENTS = {
         ),
     },
     "table": {
-        "label": "Table Patient",
+        "label": "Mécanique (Gantry & Table)",
         "icon": "⚙️",
         "metric_label": "Scaling V (mm)",
         "failure_desc": "Friction / Graissage requis",
@@ -67,7 +67,7 @@ SIEMENS_COMPONENTS = {
         ),
     },
     "generator": {
-        "label": "Generateur HT",
+        "label": "Générateur HT",
         "icon": "🔋",
         "metric_label": "Precision HU",
         "failure_desc": "Derive kVp / Calibration requise",
@@ -80,7 +80,7 @@ SIEMENS_COMPONENTS = {
 
 GE_COMPONENTS = {
     "tube": {
-        "label": "Tube a Rayons X",
+        "label": "Tube à Rayons X",
         "icon": "🔌",
         "metric_label": "MTF50 (lp/cm)",
         "failure_desc": "Blooming spot focal / Anode usee",
@@ -91,7 +91,7 @@ GE_COMPONENTS = {
         ),
     },
     "detectors": {
-        "label": "Detecteurs / DAS",
+        "label": "Détecteurs / DAS",
         "icon": "📡",
         "metric_label": "Uniformite (HU)",
         "failure_desc": "Derive detecteurs / Calibration DAS",
@@ -102,7 +102,7 @@ GE_COMPONENTS = {
         ),
     },
     "table": {
-        "label": "Table Patient",
+        "label": "Mécanique (Gantry & Table)",
         "icon": "⚙️",
         "metric_label": "Epaisseur coupe (mm)",
         "failure_desc": "Derive mecanique / Alignement",
@@ -113,7 +113,7 @@ GE_COMPONENTS = {
         ),
     },
     "generator": {
-        "label": "Generateur HT",
+        "label": "Générateur HT",
         "icon": "🔋",
         "metric_label": "Precision HU",
         "failure_desc": "Derive kVp / Calibration requise",
@@ -127,7 +127,7 @@ GE_COMPONENTS = {
 
 CANON_COMPONENTS = {
     "tube": {
-        "label": "Tube a Rayons X",
+        "label": "Tube à Rayons X",
         "icon": "🔌",
         "metric_label": "Noise (SD)",
         "failure_desc": "Filament / Anode usee",
@@ -138,8 +138,8 @@ CANON_COMPONENTS = {
         ),
     },
     "gantry": {
-        "label": "Gantry / Roulement",
-        "icon": "⚡",
+        "label": "Détecteurs / DAS",
+        "icon": "📡",
         "metric_label": "Uniformite (NUI)",
         "failure_desc": "Usure roulements / Derive detecteurs",
         "action": (
@@ -149,7 +149,7 @@ CANON_COMPONENTS = {
         ),
     },
     "table": {
-        "label": "Table Patient",
+        "label": "Mécanique (Gantry & Table)",
         "icon": "⚙️",
         "metric_label": "Scaling V (mm)",
         "failure_desc": "Friction / Desalignement mecanique",
@@ -160,7 +160,7 @@ CANON_COMPONENTS = {
         ),
     },
     "generator": {
-        "label": "Generateur HT",
+        "label": "Générateur HT",
         "icon": "🔋",
         "metric_label": "Precision HU",
         "failure_desc": "Derive kVp / Calibration requise",
@@ -259,6 +259,7 @@ def _extract_metrics() -> tuple[str, dict[str, Optional[float]]]:
         "Uniformity_HU": None,
         "Slice_Thickness_mm": None,
         "HU_Precision": None,
+        "Noise_HU": None,  # Ajouté uniquement pour l'affichage UI
     }
     imputed: dict[str, str] = {}  # key -> reason
 
@@ -267,6 +268,8 @@ def _extract_metrics() -> tuple[str, dict[str, Optional[float]]]:
         metrics["MTF_50_lp_cm"] = advanced.mtf.mtf_50_lpmm * 10.0
 
     if basic is not None:
+        if basic.noise is not None:
+            metrics["Noise_HU"] = basic.noise.std_hu
         if basic.uniformity is not None:
             metrics["Uniformity_HU"] = basic.uniformity.non_uniformity_index
         if basic.slice_thickness is not None:
@@ -396,66 +399,67 @@ def render_tab_predictive(scanner_id: str) -> list:
     st.caption("Metriques d'entree IA extraites de la session QA du jour.")
 
     if all_available:
-        if manufacturer == "GE":
-            mc1, mc2, mc3, mc4 = st.columns(4)
-            mc1.metric(
-                label="🎯 MTF 50%",
-                value=f"{metrics['MTF_50_lp_cm']:.2f} lp/cm",
-                help=imputed.get("MTF_50_lp_cm"),
-            )
-            mc2.metric(
-                label="📊 Uniformite (NUI)",
-                value=f"{metrics['Uniformity_HU']:.3f} HU",
-                help=imputed.get("Uniformity_HU"),
-            )
-            mc3.metric(
-                label="📏 Epaisseur de coupe",
-                value=f"{metrics['Slice_Thickness_mm']:.2f} mm",
-                help=imputed.get("Slice_Thickness_mm"),
-            )
-            mc4.metric(
-                label="⚖️ Precision HU",
-                value=f"{metrics['HU_Precision']:.3f} HU",
-                help=imputed.get("HU_Precision"),
-            )
-        elif manufacturer == "CANON":
-            # Canon: 4 columns ONLY (No kVp, No mAs)
-            # Show RAW noise in UI, but normalized noise goes to AI
-            raw_noise = metrics.get("Noise_HU_Raw", metrics["Noise_HU"])
-            norm_noise = metrics["Noise_HU"]
-            thickness = metrics.get("Noise_Thickness_mm", 5.0)
-            is_normalized = abs(raw_noise - norm_noise) > 0.001
+        val_noise = metrics.get("Noise_HU_Raw", metrics.get("Noise_HU"))
+        val_unif = metrics.get("Uniformity_HU")
+        val_geom = metrics.get("Scaling_V_mm") or metrics.get("Slice_Thickness_mm")
+        
+        if "Scaling_V_mm" in metrics and metrics.get("Scaling_V_mm") is not None:
+            label_geom = "📏 Scaling Vertical"
+            geom_help = imputed.get("Scaling_V_mm")
+        else:
+            label_geom = "📏 Épaisseur de coupe"
+            geom_help = imputed.get("Slice_Thickness_mm")
+            
+        val_hu = metrics.get("HU_Precision")
+        val_mtf = metrics.get("MTF_50_lp_cm")
+        
+        kvp = metrics.get("kVp")
+        mas = metrics.get("mAs")
+        val_params = f"{kvp:.0f}kV / {mas:.0f}mAs" if kvp is not None and mas is not None else None
 
-            mc1, mc2, mc3, mc4 = st.columns(4)
-            noise_help = (
-                f"Bruit brut: {raw_noise:.3f} HU @ {thickness:.1f} mm | "
-                f"Normalise 5.0mm: {norm_noise:.3f} HU"
-                if is_normalized
-                else imputed.get("Noise_HU")
-            )
-            mc1.metric(
-                label="🔊 Bruit / Noise",
-                value=f"{raw_noise:.3f} HU",
-                help=noise_help,
-            )
-            mc2.metric(
-                label="📊 Uniformite (NUI)",
-                value=f"{metrics['Uniformity_HU']:.3f} HU",
-                help=imputed.get("Uniformity_HU"),
-            )
-            mc3.metric(
-                label="📏 Scaling Vertical",
-                value=f"{metrics['Scaling_V_mm']:.3f} mm",
-                help=imputed.get("Scaling_V_mm"),
-            )
-            mc4.metric(
-                label="🎯 Precision HU",
-                value=f"{metrics['HU_Precision']:.3f} HU",
-                help=imputed.get("HU_Precision"),
-            )
+        cols = st.columns(5)
+        
+        with cols[0]:
+            if val_noise is not None:
+                thickness = metrics.get("Noise_Thickness_mm", 5.0)
+                norm_noise = metrics.get("Noise_HU", val_noise)
+                is_normalized = abs(val_noise - norm_noise) > 0.001
+                noise_help = (
+                    f"Bruit brut: {val_noise:.3f} HU @ {thickness:.1f} mm | Normalisé 5.0mm: {norm_noise:.3f} HU"
+                    if is_normalized else imputed.get("Noise_HU")
+                )
+                st.metric("🔊 Bruit / Noise", f"{val_noise:.3f} HU", help=noise_help)
+            else:
+                st.metric("🔊 Bruit / Noise", "N/A", help="Non requis par le modèle IA")
 
-            # Show normalization notice if noise was adjusted
-            if is_normalized:
+        with cols[1]:
+            if val_unif is not None:
+                st.metric("📊 Uniformité (NUI)", f"{val_unif:.3f} HU", help=imputed.get("Uniformity_HU"))
+            else:
+                st.metric("📊 Uniformité (NUI)", "N/A", help="Non requis par le modèle IA")
+
+        with cols[2]:
+            if val_geom is not None:
+                st.metric(label_geom, f"{val_geom:.3f} mm", help=geom_help)
+            else:
+                st.metric("📏 Géométrie", "N/A", help="Non requis par le modèle IA")
+
+        with cols[3]:
+            if val_hu is not None:
+                st.metric("🎯 Précision HU", f"{val_hu:.3f} HU", help=imputed.get("HU_Precision"))
+            else:
+                st.metric("🎯 Précision HU", "N/A", help="Non requis par le modèle IA")
+
+        with cols[4]:
+            if val_mtf is not None:
+                st.metric("🎯 Résolution (MTF)", f"{val_mtf:.2f} lp/cm", help=imputed.get("MTF_50_lp_cm"))
+            else:
+                st.metric("🎯 Résolution (MTF)", "N/A", help="Non requis par le modèle IA")
+
+        # Notification de normalisation pour Canon (si applicable)
+        if manufacturer == "CANON" and val_noise is not None:
+            norm_noise = metrics.get("Noise_HU", val_noise)
+            if abs(val_noise - norm_noise) > 0.001:
                 st.markdown(
                     f"""
                     <div style="
@@ -469,40 +473,13 @@ def render_tab_predictive(scanner_id: str) -> list:
                     ">
                         🔬 <b>Normalisation Bruit :</b>
                         Epaisseur de coupe = <b>{thickness:.1f} mm</b> |
-                        Bruit brut = <b>{raw_noise:.3f} HU</b> →
+                        Bruit brut = <b>{val_noise:.3f} HU</b> →
                         Normalise 5.0mm = <b>{norm_noise:.3f} HU</b><br/>
                         <em>Formule : Noise_5mm = Noise_raw × sqrt(thickness / 5.0)</em>
                     </div>
                     """,
                     unsafe_allow_html=True,
                 )
-        else:
-            # Siemens: 6 metrics including kVp/mAs context
-            mc1, mc2, mc3, mc4, mc5, mc6 = st.columns(6)
-            mc1.metric(
-                label="🔊 Bruit / Noise",
-                value=f"{metrics['Noise_HU']:.3f} HU",
-            )
-            mc2.metric(
-                label="📊 Uniformite (NUI)",
-                value=f"{metrics['Uniformity_HU']:.3f} HU",
-            )
-            mc3.metric(
-                label="📏 Scaling Vertical",
-                value=f"{metrics['Scaling_V_mm']:.3f} mm",
-            )
-            mc4.metric(
-                label="⚖️ Precision HU",
-                value=f"{metrics['HU_Precision']:.3f} HU",
-            )
-            mc5.metric(
-                label="⚡ kVp",
-                value=f"{metrics['kVp']:.0f} kV",
-            )
-            mc6.metric(
-                label="💡 mAs",
-                value=f"{metrics['mAs']:.0f} mAs",
-            )
 
         # Show imputation notice if any values were estimated
         if imputed:
@@ -635,7 +612,7 @@ def render_tab_predictive(scanner_id: str) -> list:
     st.divider()
 
     # ── 5. Survival Probability Chart ─────────────────────────────
-    st.markdown("### 📉 Courbes de Survie — Horizon 90 Jours")
+    st.markdown("### 📈 Courbes de Survie Globales — Cycle de vie complet")
     st.caption(
         "Probabilite estimee qu'un composant reste fonctionnel au jour J.  \n"
         "Modele : P(survie) = max(0, 1 − J / RUL) × 100%."
@@ -659,10 +636,10 @@ def render_tab_predictive(scanner_id: str) -> list:
             status, _ = _rul_status(rul)
             rows.append({
                 "Composant": f"{cfg['icon']} {cfg['label']}",
-                "RUL (jours)": rul if rul is not None else "—",
+                "RUL (Jours)": rul if rul is not None else "—",
                 "Statut": status,
-                "Indicateur": cfg["metric_label"],
-                "Defaillance": cfg["failure_desc"],
+                "Métrique QA Déclencheuse": cfg["metric_label"],
+                "Défaillance Anticipée": cfg["failure_desc"],
             })
         st.dataframe(
             pd.DataFrame(rows),
@@ -691,7 +668,11 @@ def _build_survival_chart(
     components: dict,
 ) -> go.Figure:
     """Build multi-line Plotly survival probability chart."""
-    days = np.arange(0, HORIZON_DAYS + 1)
+    valid_ruls = [r for r in preds.values() if r is not None]
+    max_rul = max(valid_ruls) if valid_ruls else 90
+    horizon_days = int(max_rul * 1.05)
+    
+    days = np.arange(0, horizon_days + 1)
     fig = go.Figure()
 
     for key, cfg in components.items():
@@ -729,7 +710,7 @@ def _build_survival_chart(
     # 30-day warning line
     fig.add_vline(
         x=30, line_dash="dot", line_color="#d29922",
-        annotation_text="30j", annotation_position="top",
+        annotation_text="Seuil d'alerte critique (30j)", annotation_position="top right",
         annotation_font_color="#d29922", annotation_font_size=10,
     )
 
@@ -740,9 +721,9 @@ def _build_survival_chart(
         height=420,
         margin=dict(t=40, b=50, l=60, r=30),
         xaxis=dict(
-            title="Jours a partir d'aujourd'hui",
+            title="Jours à partir d'aujourd'hui",
             gridcolor="rgba(139,148,158,0.12)",
-            range=[0, HORIZON_DAYS], dtick=10,
+            range=[0, horizon_days],
         ),
         yaxis=dict(
             title="Probabilite de Survie (%)",

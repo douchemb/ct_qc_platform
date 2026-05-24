@@ -16,6 +16,7 @@ from dashboard.tab_summary import render_tab_summary
 from dashboard.tab_advanced import render_tab_advanced
 from dashboard.tab_dosimetry import render_tab_dosimetry
 from dashboard.tab_predictive import render_tab_predictive
+from dashboard.tab_history import render_tab_history
 from dashboard.helpers import hdr, fig_to_pdf_bytes
 
 
@@ -66,6 +67,7 @@ def render_sidebar_and_main() -> None:
             show_dosi = st.checkbox("💊 Dosimétrie", value=True)
             show_health = st.checkbox("🩺 État de l'appareil", value=True)
             show_pred = st.checkbox("🧠 Prédictif", value=True)
+            show_hist = st.checkbox("📈 Historique", value=True)
 
         st.divider()
         run = st.button("🚀 Lancer l'analyse", type="primary",
@@ -108,6 +110,8 @@ def render_sidebar_and_main() -> None:
         tab_registry.append(("🩺 État de l'appareil", "health"))
     if show_pred:
         tab_registry.append(("🧠 Prédictif", "pred"))
+    if show_hist:
+        tab_registry.append(("📈 Historique", "hist"))
 
     if not tab_registry:
         st.warning(
@@ -138,20 +142,25 @@ def render_sidebar_and_main() -> None:
             elif tab_key == "pred":
                 figs = render_tab_predictive(scanner_id_val)
                 all_export_figs.extend(figs)
+            elif tab_key == "hist":
+                figs = render_tab_history()
+                all_export_figs.extend(figs)
 
-    # ── Multi-page PDF export ─────────────────────────────────────────
-    if all_export_figs:
+    # ── Multi-page PDF export (Natif) ─────────────────────────────────
+    if "basic_result" in st.session_state:
         st.divider()
-        hdr("📄 Rapport multi-page PDF")
-        pdf_bytes = fig_to_pdf_bytes(all_export_figs)
-        ts = st.session_state.get("analysis_date", "report")
+        st.markdown("### 📄 Rapport Multi-page PDF")
+        
+        from dashboard.pdf_generator import create_global_pdf_report
+        pdf_buffer = create_global_pdf_report(st.session_state)
+        
         st.download_button(
-            "⬇️ Télécharger le rapport PDF complet",
-            data=pdf_bytes,
-            file_name=f"ct_qc_report_{ts}.pdf",
-            mime="application/pdf", key="dl_full_pdf",
-            use_container_width=True)
-
+            label="⬇️ Télécharger le rapport PDF complet",
+            data=pdf_buffer,
+            file_name="Rapport_Clinique_SaaS.pdf",
+            mime="application/pdf",
+            use_container_width=True
+        )
 
 def _render_welcome() -> None:
     """Welcome screen when no analysis has been run."""
@@ -227,6 +236,38 @@ def _archive_current_session(scanner_id: str, operator_id: str) -> None:
 
     try:
         archive.append_session(record)
+        
+        # --- Sauvegarde en base SQLite (Historique des Tendances) ---
+        try:
+            from dashboard.tab_predictive import _extract_metrics
+            from predictive_maintenance.inference import predict_rul
+            from dashboard.db_manager import insert_qa_session
+            
+            manufacturer, input_metrics, _ = _extract_metrics()
+            
+            noise = input_metrics.get("Noise_HU_Raw", input_metrics.get("Noise_HU", 0.0))
+            unif = input_metrics.get("Uniformity_HU", 0.0)
+            mtf = input_metrics.get("MTF_50_lp_cm", 0.0)
+            
+            preds = predict_rul(manufacturer, input_metrics)
+            tube_rul = preds.get("tube", 0) or 0
+            
+            valid_ruls = [v for v in preds.values() if v is not None]
+            min_rul = min(valid_ruls) if valid_ruls else 0
+            global_score = float(min(min_rul, 100))
+
+            
+            insert_qa_session(
+                scanner_model=scanner_id,
+                noise_hu=float(noise),
+                uniformity_hu=float(unif),
+                mtf_50=float(mtf),
+                global_score_percent=float(global_score),
+                tube_rul_days=int(tube_rul)
+            )
+        except Exception as db_exc:
+            st.warning(f"⚠️ Historique SQLite non mis à jour : {db_exc}")
+
         st.success(f"✅ Session archivée : {record.session_id[:8]}...")
     except Exception as exc:
         st.error(f"❌ Erreur archivage : {exc}")

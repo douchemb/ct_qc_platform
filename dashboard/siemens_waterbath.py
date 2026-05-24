@@ -325,14 +325,18 @@ def _generate_profile_plot(
         title = "Vertical Profile (Uniformity)"
         xlabel = "Row (px)"
 
-    # Smoothed curve using convolution (fallback if scipy unavailable)
-    try:
-        from scipy.signal import savgol_filter
-        smooth_profile = savgol_filter(raw_profile, window_length=31, polyorder=3)
-    except ImportError:
-        # Fallback: simple moving average
-        kernel = np.ones(15) / 15
-        smooth_profile = np.convolve(raw_profile, kernel, mode='same')
+    # Smoothed curve — simple moving average (no polynomial artifacts)
+    # A centered moving average cannot overshoot at step edges,
+    # unlike Savitzky-Golay (polyorder≥2) which produces Runge/Gibbs
+    # oscillations on the sharp air→phantom boundary.
+    window = 7
+    kernel = np.ones(window) / window
+    smooth_profile = np.convolve(raw_profile, kernel, mode='same')
+    # Fix edge padding: replace the first/last (window//2) samples
+    # with the raw values to avoid boundary roll-off artefacts.
+    pad = window // 2
+    smooth_profile[:pad] = raw_profile[:pad]
+    smooth_profile[-pad:] = raw_profile[-pad:]
 
     fig, ax = plt.subplots(figsize=(8, 3.5))
     _apply_dark_transparent(fig, ax)
@@ -340,7 +344,7 @@ def _generate_profile_plot(
     ax.plot(raw_profile, color='#58a6ff', linewidth=0.8, alpha=0.6,
             label='Raw Profile')
     ax.plot(smooth_profile, color='#D32F2F', linewidth=2.0,
-            label='Fitted Curve')
+            label='Smoothed (Moving Avg)')
 
     ax.set_xlabel(xlabel, fontsize=10)
     ax.set_ylabel("HU", fontsize=10)
