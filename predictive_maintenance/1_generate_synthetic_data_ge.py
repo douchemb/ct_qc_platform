@@ -39,7 +39,7 @@ COMPONENTS = {
     "tube": {
         "metric": "MTF_50_lp_cm",
         "rul_col": "RUL_Tube",
-        "cycles": [380, 420, 400, 440],        # ~410d avg
+        "cycles": [1035, 1065, 1095, 1050, 1080],  # ~1065d avg (max 1095d = 3 yrs)
         "phase_offset": 0,
         "baseline": 8.0,                       # healthy MTF50 (lp/cm)
         "drift_amplitude": 4.0,                # degrades by 4 -> reaches ~4.0
@@ -50,7 +50,7 @@ COMPONENTS = {
     "detectors": {
         "metric": "Uniformity_HU",
         "rul_col": "RUL_Detectors",
-        "cycles": [170, 190, 180, 200, 185],   # ~185d avg (frequent DAS cal)
+        "cycles": [3225, 3255, 3285, 3240, 3270],  # ~3255d avg (max 3285d = 9 yrs)
         "phase_offset": 67,                    # coprime offset
         "baseline": 0.5,
         "drift_amplitude": 4.5,
@@ -61,7 +61,7 @@ COMPONENTS = {
     "table": {
         "metric": "Slice_Thickness_mm",
         "rul_col": "RUL_Table",
-        "cycles": [230, 270, 250, 210, 260],   # ~244d avg
+        "cycles": [1765, 1795, 1825, 1780, 1810],  # ~1795d avg (max 1825d = 5 yrs)
         "phase_offset": 41,                    # coprime offset
         "baseline": 5.0,                       # nominal slice thickness
         "drift_amplitude": 1.5,                # drifts up to 6.5 mm
@@ -72,7 +72,7 @@ COMPONENTS = {
     "generator": {
         "metric": "HU_Precision",
         "rul_col": "RUL_Generator",
-        "cycles": [460, 500, 480, 520],        # ~490d avg (long generator life)
+        "cycles": [2495, 2525, 2555, 2510, 2540],  # ~2525d avg (max 2555d = 7 yrs)
         "phase_offset": 211,                   # coprime offset
         "baseline": 0.0,                       # perfect HU accuracy
         "drift_amplitude": 3.5,

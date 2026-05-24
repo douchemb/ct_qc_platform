@@ -84,7 +84,7 @@ COMPONENTS = {
     "tube": {
         "metric": "Noise_HU",
         "rul_col": "RUL_Tube",
-        "cycles": [270, 310, 290, 330],       # ~300d avg (tube filament life)
+        "cycles": [1035, 1065, 1095, 1050, 1080],  # ~1065d avg (max 1095d = 3 yrs)
         "phase_offset": 0,                    # tube starts at day 0
         # baseline is NOW dynamic (computed per-day from kVp/mAs)
         "baseline": None,                     # placeholder — overridden
@@ -96,7 +96,7 @@ COMPONENTS = {
     "gantry": {
         "metric": "Uniformity_HU",
         "rul_col": "RUL_Gantry",
-        "cycles": [160, 180, 170, 190, 175],   # ~175d avg (frequent brushblock)
+        "cycles": [1765, 1795, 1825, 1780, 1810],  # ~1795d avg (max 1825d = 5 yrs)
         "phase_offset": 73,                    # coprime offset from tube
         "baseline": 0.5,
         "drift_amplitude": 3.0,
@@ -107,7 +107,7 @@ COMPONENTS = {
     "table": {
         "metric": "Scaling_V_mm",
         "rul_col": "RUL_Table",
-        "cycles": [230, 270, 250, 210, 260],   # ~245d avg (table greasing)
+        "cycles": [1765, 1795, 1825, 1780, 1810],  # ~1795d avg (max 1825d = 5 yrs)
         "phase_offset": 137,                   # coprime offset
         "baseline": 200.0,
         "drift_amplitude": 3.0,
@@ -118,7 +118,7 @@ COMPONENTS = {
     "generator": {
         "metric": "HU_Precision",
         "rul_col": "RUL_Generator",
-        "cycles": [450, 490, 470, 510],        # ~480d avg (generator calibration)
+        "cycles": [2495, 2525, 2555, 2510, 2540],  # ~2525d avg (max 2555d = 7 yrs)
         "phase_offset": 311,                   # large coprime offset from tube
         "baseline": 0.0,                       # perfect HU accuracy
         "drift_amplitude": 3.5,

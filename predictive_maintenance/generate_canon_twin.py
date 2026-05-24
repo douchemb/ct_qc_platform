@@ -95,31 +95,31 @@ precision_base = np.clip(precision_base, 0.0, 4.0)
 # ══════════════════════════════════════════════════════════════════
 
 # --- Tube RUL ---
-# Lifespan: ~1000 days. Drops with time + accelerated by noise increase.
+# Lifespan: ~1095 days. Drops with time + accelerated by noise increase.
 # Noise increase = anode pitting / focal spot blooming.
-rul_tube = 1000 - days_passed - (noise_base - 4.5) * 20
+rul_tube = 1095 - days_passed - (noise_base - 4.5) * 20
 rul_tube += np.random.normal(0, 8, N_SAMPLES)  # Prediction uncertainty
-rul_tube = np.clip(rul_tube, 0, 1000).astype(int)
+rul_tube = np.clip(rul_tube, 0, 1095).astype(int)
 
 # --- Gantry RUL ---
-# Lifespan: ~1200 days (bearings are robust). Drops with uniformity drift.
+# Lifespan: ~1825 days (bearings are robust). Drops with uniformity drift.
 # Uniformity drift = gantry rotation instability / detector misalignment.
-rul_gantry = 1200 - days_passed - (unif_base - 1.0) * 50
+rul_gantry = 1825 - days_passed - (unif_base - 1.0) * 50
 rul_gantry += np.random.normal(0, 10, N_SAMPLES)
-rul_gantry = np.clip(rul_gantry, 0, 1200).astype(int)
+rul_gantry = np.clip(rul_gantry, 0, 1825).astype(int)
 
 # --- Table RUL ---
-# Lifespan: ~1500 days (mechanical, slow wear). Drops with scaling error.
+# Lifespan: ~1825 days (mechanical, slow wear). Drops with scaling error.
 # Scaling error = table rail friction / belt stretch.
-rul_table = 1500 - days_passed - np.abs(scaling_base - CANON_NOMINAL_DIAMETER) * 30
+rul_table = 1825 - days_passed - np.abs(scaling_base - CANON_NOMINAL_DIAMETER) * 30
 rul_table += np.random.normal(0, 12, N_SAMPLES)
-rul_table = np.clip(rul_table, 0, 1500).astype(int)
+rul_table = np.clip(rul_table, 0, 1825).astype(int)
 
 # --- Generator RUL ---
-# Lifespan: ~1100 days. Drops with noise (kVp ripple) + precision (cap aging).
-rul_gen = 1100 - days_passed - (noise_base - 4.5) * 10 - (precision_base * 20)
+# Lifespan: ~2555 days. Drops with noise (kVp ripple) + precision (cap aging).
+rul_gen = 2555 - days_passed - (noise_base - 4.5) * 10 - (precision_base * 20)
 rul_gen += np.random.normal(0, 8, N_SAMPLES)
-rul_gen = np.clip(rul_gen, 0, 1100).astype(int)
+rul_gen = np.clip(rul_gen, 0, 2555).astype(int)
 
 # ══════════════════════════════════════════════════════════════════
 # Step 4: Assemble and Save

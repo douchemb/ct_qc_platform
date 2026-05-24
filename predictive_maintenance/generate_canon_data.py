@@ -78,27 +78,27 @@ precision = np.clip(precision, 0.0, 6.0)
 # --- Tube RUL ---
 # Physics: Noise increases with anode pitting / focal spot blooming.
 #          Precision degrades as kVp output drifts from tube aging.
-# Rule: Base 300 days, penalized by excess noise and HU drift.
-y_tube = 300 - ((noise - 15) * 10) - (precision * 15)
+# Rule: Base 1095 days, penalized by excess noise and HU drift.
+y_tube = 1095 - ((noise - 15) * 10) - (precision * 15)
 
 # --- Gantry RUL ---
 # Physics: Uniformity degrades when gantry bearings wear or
 #          detector ring alignment drifts during rotation.
-# Rule: Base 365 days, penalized heavily by uniformity degradation.
-y_gantry = 365 - ((unif - 1.5) * 40)
+# Rule: Base 1825 days, penalized heavily by uniformity degradation.
+y_gantry = 1825 - ((unif - 1.5) * 40)
 
 # --- Table RUL ---
 # Physics: Scaling error is a direct measure of mechanical positioning
 #          accuracy. Table rail friction and belt stretch cause drift.
-# Rule: Base 400 days, penalized by absolute scaling error from nominal.
-y_table = 400 - (np.abs(scaling - CANON_NOMINAL_DIAMETER) * 25)
+# Rule: Base 1825 days, penalized by absolute scaling error from nominal.
+y_table = 1825 - (np.abs(scaling - CANON_NOMINAL_DIAMETER) * 25)
 
 # --- Generator RUL ---
 # Physics: Overall system stress indicator. A degrading generator
 #          causes both increased noise (unstable kVp ripple) and
 #          uniformity drift (inconsistent mA regulation).
-# Rule: Base 350 days, penalized by both noise and uniformity excess.
-y_gen = 350 - ((noise - 15) * 5) - ((unif - 1.5) * 20)
+# Rule: Base 2555 days, penalized by both noise and uniformity excess.
+y_gen = 2555 - ((noise - 15) * 5) - ((unif - 1.5) * 20)
 
 # Add realistic measurement noise to targets
 y_tube += np.random.normal(0, 5, N_SAMPLES)
@@ -107,10 +107,10 @@ y_table += np.random.normal(0, 5, N_SAMPLES)
 y_gen += np.random.normal(0, 5, N_SAMPLES)
 
 # Clip to realistic operational ranges (0 to max lifespan)
-y_tube = np.clip(y_tube, 0, 300)
-y_gantry = np.clip(y_gantry, 0, 365)
-y_table = np.clip(y_table, 0, 400)
-y_gen = np.clip(y_gen, 0, 350)
+y_tube = np.clip(y_tube, 0, 1095)
+y_gantry = np.clip(y_gantry, 0, 1825)
+y_table = np.clip(y_table, 0, 1825)
+y_gen = np.clip(y_gen, 0, 2555)
 
 # Round to integer days
 y_tube = np.round(y_tube).astype(int)
